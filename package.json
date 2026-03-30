@@ -13,7 +13,7 @@
   "author": "",
   "license": "ISC",
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "type": "commonjs",
   "dependencies": {
