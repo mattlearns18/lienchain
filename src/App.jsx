@@ -1,7 +1,9 @@
+import { useState } from "react";
 import "./App.css";
 
 const TX_HASH = "F9C2658D82838EE7BB3ECA12C8958211BC56D0362B31F192FBB6E21FAEF4116D";
 const EXPLORER = `https://testnet.xrpl.org/transactions/${TX_HASH}`;
+const DEMO_EMAIL = "matthewsabine18@gmail.com";
 
 function Badge({ children, color = "blue" }) {
   return <span className={`badge badge-${color}`}>{children}</span>;
@@ -20,27 +22,65 @@ function Section({ id, children, className = "" }) {
 }
 
 export default function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [demoEmail, setDemoEmail] = useState("");
+  const [demoError, setDemoError] = useState("");
+  const [demoSent, setDemoSent] = useState(false);
+
+  function handleDemoSubmit(e) {
+    e.preventDefault();
+    if (!demoEmail.includes("@")) {
+      setDemoError("Please enter a valid email address.");
+      return;
+    }
+    setDemoError("");
+    window.location.href = `mailto:${DEMO_EMAIL}?subject=LienChain%20Demo%20Request&body=Hi%2C%20I%27d%20like%20to%20request%20a%20demo%20of%20LienChain.%0A%0AEmail%3A%20${encodeURIComponent(demoEmail)}`;
+    setDemoSent(true);
+  }
+
+  const navLinks = (
+    <>
+      <a href="#problem" onClick={() => setMenuOpen(false)}>Problem</a>
+      <a href="#solution" onClick={() => setMenuOpen(false)}>Solution</a>
+      <a href="#features" onClick={() => setMenuOpen(false)}>Features</a>
+      <a href="#status" onClick={() => setMenuOpen(false)}>Status</a>
+      <a
+        href="https://github.com/mattlearns18/lienchain"
+        target="_blank"
+        rel="noreferrer"
+        className="btn btn-outline"
+        onClick={() => setMenuOpen(false)}
+      >
+        GitHub
+      </a>
+      <a href="#contact" className="btn btn-primary" onClick={() => setMenuOpen(false)}>
+        Request Demo
+      </a>
+    </>
+  );
+
   return (
     <>
       {/* NAV */}
       <nav className="nav">
         <div className="container nav-inner">
           <span className="nav-logo">⛓️ LienChain</span>
-          <div className="nav-links">
-            <a href="#problem">Problem</a>
-            <a href="#solution">Solution</a>
-            <a href="#features">Features</a>
-            <a href="#status">Status</a>
-            <a
-              href="https://github.com/mattlearns18/lienchain"
-              target="_blank"
-              rel="noreferrer"
-              className="btn btn-outline"
-            >
-              GitHub
-            </a>
-          </div>
+          <div className="nav-links desktop-nav">{navLinks}</div>
+          <button
+            className="hamburger"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-label="Toggle menu"
+          >
+            <span className={`ham-bar ${menuOpen ? "open" : ""}`} />
+            <span className={`ham-bar ${menuOpen ? "open" : ""}`} />
+            <span className={`ham-bar ${menuOpen ? "open" : ""}`} />
+          </button>
         </div>
+        {menuOpen && (
+          <div className="mobile-menu">
+            <div className="container mobile-links">{navLinks}</div>
+          </div>
+        )}
       </nav>
 
       {/* HERO */}
@@ -225,14 +265,45 @@ export default function App() {
         </div>
       </Section>
 
+      {/* CONTACT */}
+      <Section id="contact">
+        <h2 className="section-title">📬 Request a Demo</h2>
+        <p className="section-sub">
+          Interested in tokenizing your PI medical receivables on XRPL? Drop your email and we'll be in touch.
+        </p>
+        <form className="demo-form" onSubmit={handleDemoSubmit}>
+          {demoSent ? (
+            <div className="demo-confirm">
+              ✅ Your email client should have opened — we'll be in touch at <strong>{demoEmail}</strong>.
+            </div>
+          ) : (
+            <>
+              <div className="demo-row">
+                <input
+                  type="text"
+                  className={`demo-input ${demoError ? "demo-input-error" : ""}`}
+                  placeholder="you@example.com"
+                  value={demoEmail}
+                  onChange={(e) => { setDemoEmail(e.target.value); setDemoError(""); }}
+                />
+                <button type="submit" className="btn btn-primary">Request Demo</button>
+              </div>
+              {demoError && <p className="demo-error">{demoError}</p>}
+            </>
+          )}
+        </form>
+      </Section>
+
       {/* FOOTER */}
       <footer className="footer">
         <div className="container footer-inner">
           <span className="nav-logo">⛓️ LienChain</span>
           <span className="muted">MIT License · Built on XRPL</span>
-          <a href="https://github.com/mattlearns18/lienchain" target="_blank" rel="noreferrer">
-            GitHub →
-          </a>
+          <div className="footer-links">
+            <a href="https://github.com/mattlearns18/lienchain" target="_blank" rel="noreferrer">GitHub →</a>
+            <a href="https://testnet.xrpl.org" target="_blank" rel="noreferrer">XRPL Explorer →</a>
+            <a href="#contact">Contact →</a>
+          </div>
         </div>
       </footer>
     </>

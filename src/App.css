@@ -93,6 +93,37 @@
 /* Misc */
 .muted { color: var(--muted); font-size: 0.92rem; }
 
+/* Hamburger */
+.hamburger { display: none; flex-direction: column; justify-content: center; gap: 5px; background: none; border: none; cursor: pointer; padding: 4px; }
+.ham-bar { display: block; width: 22px; height: 2px; background: var(--text); border-radius: 2px; transition: all 0.2s; }
+.hamburger .ham-bar.open:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.hamburger .ham-bar.open:nth-child(2) { opacity: 0; }
+.hamburger .ham-bar.open:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* Mobile menu */
+.mobile-menu { border-top: 1px solid var(--border); background: var(--bg); padding: 16px 0; }
+.mobile-links { display: flex; flex-direction: column; gap: 4px; }
+.mobile-links a { padding: 10px 4px; color: var(--muted); font-size: 0.95rem; border-radius: 6px; }
+.mobile-links a:hover { color: var(--text); text-decoration: none; }
+.mobile-links .btn { margin-top: 8px; justify-content: center; }
+
+@media (max-width: 768px) {
+  .desktop-nav { display: none; }
+  .hamburger { display: flex; }
+}
+
+/* Contact / Demo form */
+.demo-form { max-width: 560px; }
+.demo-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.demo-input { flex: 1; min-width: 200px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.15s; }
+.demo-input:focus { border-color: var(--accent); }
+.demo-input-error { border-color: #ef4444; }
+.demo-error { color: #f87171; font-size: 0.85rem; margin-top: 8px; }
+.demo-confirm { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 16px 20px; color: var(--text); font-size: 0.95rem; }
+
 /* Footer */
 .footer { border-top: 1px solid var(--border); padding: 32px 0; }
 .footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+.footer-links a { color: var(--muted); font-size: 0.9rem; transition: color 0.15s; }
+.footer-links a:hover { color: var(--text); text-decoration: none; }
