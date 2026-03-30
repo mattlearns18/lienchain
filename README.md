@@ -1,5 +1,7 @@
 # ⛓️ LienChain — Tokenized PI Medical Lien Settlement on XRPL
 
+[![Live Site](https://img.shields.io/badge/Live%20Site-lienchain.vercel.app-blue?style=flat-square&logo=vercel)](https://lienchain.vercel.app)
+
 > Bringing 120-day paper settlement cycles into real-time on the XRP Ledger.
 
 ---
