@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+package-lock.json
 
 # Wallet credentials — never commit seeds
 wallets.json
