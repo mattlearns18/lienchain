@@ -249,12 +249,16 @@ export default function IntakeWizard({ onClose, onComplete }) {
           <div className="wiz-body">
             <div className="wiz-field">
               <label className="wiz-label">LienCo Share — <strong>{lienCoShare}%</strong> &nbsp;·&nbsp; Clinic Share — <strong>{clinicShare}%</strong></label>
-              <input type="range" min={50} max={85} value={lienCoShare} onChange={e => setLienCoShare(Number(e.target.value))} className="wiz-slider" />
-              <div className="wiz-slider-labels"><span>50%</span><span>85%</span></div>
+              <input type="range" min={0} max={100} value={lienCoShare} onChange={e => setLienCoShare(Number(e.target.value))} className="wiz-slider" />
+              <div className="wiz-slider-labels"><span>0%</span><span>100%</span></div>
             </div>
 
             {market === "IN" && lienCoShare > 80 && (
               <div className="wiz-market-warn warn-red">⛔ Indiana 20% floor applies — clinic must receive at least 20%.</div>
+            )}
+
+            {(lienCoShare < 30 || lienCoShare > 85) && (
+              <div className="wiz-market-warn warn-orange">⚠ Unusual split ratio — please confirm reduction note fully documents the negotiation.</div>
             )}
 
             <div className="wiz-split-preview">

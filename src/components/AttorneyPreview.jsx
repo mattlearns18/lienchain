@@ -14,8 +14,9 @@ const usd = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigi
 
 // ── Settlement animation modal (same logic as AttorneyPortal) ────────────────
 function SettleModal({ onClose, lien }) {
-  const [phase, setPhase] = useState("confirm");
-  const [step,  setStep]  = useState(0);
+  const [phase,       setPhase]      = useState("confirm");
+  const [step,        setStep]       = useState(0);
+  const [lienCoShare, setLienCoShare] = useState(lien.split ?? 70);
 
   const steps = [
     { label: "Verifying attorney credentials",  detail: "Bar # on file" },
@@ -42,6 +43,35 @@ function SettleModal({ onClose, lien }) {
           <>
             <h3 className="ap-modal-title">Confirm Settlement</h3>
             <p className="ap-modal-sub">Settling <strong>{lien.id}</strong> for {usd(lien.bill)}</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                LienCo Share — <strong style={{ color: "var(--text)" }}>{lienCoShare}%</strong>
+                &nbsp;·&nbsp; Clinic Share — <strong style={{ color: "var(--text)" }}>{100 - lienCoShare}%</strong>
+              </label>
+              <input
+                type="range" min={0} max={100}
+                value={lienCoShare}
+                onChange={e => setLienCoShare(Number(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--accent)", cursor: "pointer" }}
+              />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--muted)" }}>
+                <span>0%</span><span>100%</span>
+              </div>
+            </div>
+
+            {lien.market === "IN" && lienCoShare > 80 && (
+              <div className="ap-flag-banner ap-flag-red">
+                ⛔ Indiana 20% floor applies — clinic must receive at least 20%.
+              </div>
+            )}
+
+            {(lienCoShare < 30 || lienCoShare > 85) && (
+              <div className="ap-flag-banner ap-flag-orange">
+                ⚠ Unusual split ratio — please confirm reduction note fully documents the negotiation.
+              </div>
+            )}
+
             <div className="ap-legal-note">
               By clicking Execute, you authorize settlement under {MARKET_INFO[lien.market]?.statute ?? "applicable statute"}.
               Transaction will be recorded on the XRPL public ledger.
