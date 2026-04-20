@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
 import IntakeWizard from "./components/IntakeWizard.jsx";
+import AttorneyPreview from "./components/AttorneyPreview.jsx";
 import "./Dashboard.css";
 
 // Wallet addresses (seeds never leave the server-side scripts)
@@ -60,8 +61,10 @@ export default function Dashboard() {
   const [loading,     setLoading]    = useState(true);
   const [error,       setError]      = useState(null);
   const [lastFetch,   setLastFetch]  = useState(null);
-  const [liens,       setLiens]      = useState(SETTLEMENTS);
-  const [showIntake,  setShowIntake] = useState(false);
+  const [liens,         setLiens]        = useState(SETTLEMENTS);
+  const [showIntake,    setShowIntake]   = useState(false);
+  const [activeTab,     setActiveTab]    = useState("dashboard");
+  const [previewCaseId, setPreviewCaseId] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -105,7 +108,32 @@ export default function Dashboard() {
         </div>
       </nav>
 
+      {/* TAB BAR */}
+      <div className="db-tab-bar">
+        <div className="db-container db-tab-inner">
+          <button
+            className={`db-tab ${activeTab === "dashboard" ? "db-tab-active" : ""}`}
+            onClick={() => setActiveTab("dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            className={`db-tab ${activeTab === "attorney" ? "db-tab-active" : ""}`}
+            onClick={() => setActiveTab("attorney")}
+          >
+            Attorney View
+          </button>
+        </div>
+      </div>
+
       <div className="db-container db-body">
+
+        {/* ATTORNEY VIEW TAB */}
+        {activeTab === "attorney" && (
+          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} />
+        )}
+
+        {activeTab === "dashboard" && <>
 
         {/* HEADER */}
         <div className="db-header">
@@ -197,6 +225,7 @@ export default function Dashboard() {
                   <th>Status</th>
                   <th>TX 1</th>
                   <th>TX 2</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -217,6 +246,14 @@ export default function Dashboard() {
                     </td>
                     <td><a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a></td>
                     <td>{r.tx2 ? <a href={EXPLORER + r.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx2)}</a> : <span className="db-muted">—</span>}</td>
+                    <td>
+                      <button
+                        className="db-preview-btn"
+                        onClick={() => { setPreviewCaseId(r.id); setActiveTab("attorney"); }}
+                      >
+                        Attorney View →
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -314,6 +351,9 @@ export default function Dashboard() {
             })}
           </div>
         </section>
+
+        {/* end dashboard tab */}
+        </>}
 
       </div>
 

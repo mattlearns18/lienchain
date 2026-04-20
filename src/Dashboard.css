@@ -124,6 +124,26 @@
 .db-status-fail { color: #f87171; font-size: 0.82rem; white-space: nowrap; }
 .db-balance-err { color: var(--muted); }
 
+/* Tab bar */
+.db-tab-bar { background: var(--bg2); border-bottom: 1px solid var(--border); }
+.db-tab-inner { display: flex; gap: 0; }
+.db-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); padding: 12px 20px; font-size: 0.88rem; font-weight: 600;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.db-tab:hover { color: var(--text); }
+.db-tab-active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Attorney View preview button in table */
+.db-preview-btn {
+  background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
+  color: var(--accent); padding: 4px 10px; border-radius: 6px;
+  font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s;
+}
+.db-preview-btn:hover { background: rgba(59,130,246,0.2); }
+
 /* Footer */
 .db-footer { border-top: 1px solid var(--border); padding: 24px 0; }
 .db-footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
