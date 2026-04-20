@@ -93,6 +93,17 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; }
 
+/* Create Lien button */
+.db-create-btn {
+  background: var(--accent); border: 1px solid var(--accent); color: #fff;
+  padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; transition: background 0.15s; white-space: nowrap;
+}
+.db-create-btn:hover { background: #2563eb; border-color: #2563eb; }
+
+/* Active lien status */
+.db-status-active { color: var(--green); font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+
 /* Refresh button */
 .db-refresh-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: border-color 0.15s; display: inline-flex; align-items: center; gap: 6px; }
 .db-refresh-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }

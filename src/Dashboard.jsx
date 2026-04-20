@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
+import IntakeWizard from "./components/IntakeWizard.jsx";
 import "./Dashboard.css";
 
 // Wallet addresses (seeds never leave the server-side scripts)
@@ -54,11 +55,13 @@ function FlagBadge({ flag }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const [wallets,    setWallets]    = useState(WALLETS.map(w => ({ ...w, balance: null })));
-  const [activity,   setActivity]   = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
-  const [lastFetch,  setLastFetch]  = useState(null);
+  const [wallets,     setWallets]    = useState(WALLETS.map(w => ({ ...w, balance: null })));
+  const [activity,    setActivity]   = useState([]);
+  const [loading,     setLoading]    = useState(true);
+  const [error,       setError]      = useState(null);
+  const [lastFetch,   setLastFetch]  = useState(null);
+  const [liens,       setLiens]      = useState(SETTLEMENTS);
+  const [showIntake,  setShowIntake] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -80,8 +83,8 @@ export default function Dashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const totalVolume  = SETTLEMENTS.reduce((s, r) => s + r.bill, 0);
-  const avgSplit     = Math.round(SETTLEMENTS.reduce((s, r) => s + r.split, 0) / SETTLEMENTS.length);
+  const totalVolume  = liens.reduce((s, r) => s + r.bill, 0);
+  const avgSplit     = liens.length ? Math.round(liens.reduce((s, r) => s + r.split, 0) / liens.length) : 0;
 
   return (
     <div className="db-root">
@@ -96,6 +99,7 @@ export default function Dashboard() {
             <button className="db-refresh-btn" onClick={fetchData} disabled={loading}>
               {loading ? <Spinner /> : "↻ Refresh"}
             </button>
+            <button className="db-create-btn" onClick={() => setShowIntake(true)}>+ Create Lien</button>
             <Link to="/" className="db-nav-link">← Back to site</Link>
           </div>
         </div>
@@ -136,8 +140,8 @@ export default function Dashboard() {
         <div className="db-stats">
           {[
             { label: "Total Volume",     value: usd(totalVolume) },
-            { label: "Liens Settled",    value: SETTLEMENTS.length },
-            { label: "Markets Active",   value: new Set(SETTLEMENTS.map(r => r.market)).size },
+            { label: "Liens Settled",    value: liens.length },
+            { label: "Markets Active",   value: new Set(liens.map(r => r.market)).size },
             { label: "Avg LienCo Split", value: `${avgSplit}%` },
           ].map(({ label, value }) => (
             <div className="db-stat-card" key={label}>
@@ -196,7 +200,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {SETTLEMENTS.map((r) => (
+                {liens.map((r) => (
                   <tr key={r.id}>
                     <td className="db-lien-id">{r.id}</td>
                     <td><span className="db-market-chip">{r.market}</span></td>
@@ -206,9 +210,13 @@ export default function Dashboard() {
                     <td className="db-flags-cell">
                       {r.flags.length ? r.flags.map(f => <FlagBadge key={f} flag={f} />) : <span className="db-muted">—</span>}
                     </td>
-                    <td><span className="db-status-badge">✅ Settled</span></td>
+                    <td>
+                      {r.status === "Active"
+                        ? <span className="db-status-active">🟢 Active</span>
+                        : <span className="db-status-badge">✅ Settled</span>}
+                    </td>
                     <td><a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a></td>
-                    <td><a href={EXPLORER + r.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx2)}</a></td>
+                    <td>{r.tx2 ? <a href={EXPLORER + r.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx2)}</a> : <span className="db-muted">—</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -281,7 +289,7 @@ export default function Dashboard() {
         <section className="db-section">
           <h2 className="db-section-title">Market Breakdown</h2>
           <div className="db-market-grid">
-            {SETTLEMENTS.map((r) => {
+            {liens.map((r) => {
               const lienCoAmt = Math.floor(r.bill * r.split / 100);
               const clinicAmt = r.bill - lienCoAmt;
               return (
@@ -308,6 +316,16 @@ export default function Dashboard() {
         </section>
 
       </div>
+
+      {showIntake && (
+        <IntakeWizard
+          onClose={() => setShowIntake(false)}
+          onComplete={(lien) => {
+            setLiens(prev => [lien, ...prev]);
+            setShowIntake(false);
+          }}
+        />
+      )}
 
       <footer className="db-footer">
         <div className="db-container db-footer-inner">
