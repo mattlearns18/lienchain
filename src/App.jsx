@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import "./App.css";
 
 const TX_HASH = "F9C2658D82838EE7BB3ECA12C8958211BC56D0362B31F192FBB6E21FAEF4116D";
@@ -53,6 +54,9 @@ export default function App() {
       >
         GitHub
       </a>
+      <Link to="/dashboard" className="btn btn-outline" onClick={() => setMenuOpen(false)}>
+        Live Dashboard
+      </Link>
       <a href="#contact" className="btn btn-primary" onClick={() => setMenuOpen(false)}>
         Request Demo
       </a>
@@ -101,6 +105,7 @@ export default function App() {
           <a href={EXPLORER} target="_blank" rel="noreferrer" className="btn btn-primary">
             View First Lien on Testnet →
           </a>
+          <Link to="/dashboard" className="btn btn-outline">View Live Dashboard →</Link>
           <a href="#features" className="btn btn-outline">See What's Built</a>
         </div>
         <div className="hero-stat-row">
