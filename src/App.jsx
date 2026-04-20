@@ -308,6 +308,7 @@ export default function App() {
             <a href="https://github.com/mattlearns18/lienchain" target="_blank" rel="noreferrer">GitHub →</a>
             <a href="https://testnet.xrpl.org" target="_blank" rel="noreferrer">XRPL Explorer →</a>
             <a href="#contact">Contact →</a>
+            <Link to="/attorney/demo">Attorney Demo →</Link>
           </div>
         </div>
       </footer>
