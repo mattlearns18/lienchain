@@ -85,6 +85,34 @@
 .db-market-splits strong { color: var(--text); }
 .db-market-date { font-size: 0.78rem; }
 
+/* Section header row */
+.db-section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.db-section-header .db-section-title { margin-bottom: 0; }
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; }
+
+/* Refresh button */
+.db-refresh-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: border-color 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+.db-refresh-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.db-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.db-last-fetch { font-size: 0.78rem; color: var(--muted); }
+
+/* Error banner */
+.db-error-banner { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; border-radius: 8px; padding: 12px 16px; font-size: 0.88rem; display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.db-retry-btn { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color: #f87171; padding: 4px 12px; border-radius: 6px; font-size: 0.82rem; cursor: pointer; margin-left: auto; }
+.db-retry-btn:hover { background: rgba(239,68,68,0.3); }
+
+/* Feed empty state */
+.db-feed-empty { padding: 32px 20px; text-align: center; color: var(--muted); font-size: 0.9rem; border: 1px solid var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+/* Activity feed extras */
+.db-type-chip { background: rgba(100,116,139,0.2); color: var(--muted); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.db-amount { font-weight: 600; color: var(--green); font-size: 0.85rem; white-space: nowrap; }
+.db-status-fail { color: #f87171; font-size: 0.82rem; white-space: nowrap; }
+.db-balance-err { color: var(--muted); }
+
 /* Footer */
 .db-footer { border-top: 1px solid var(--border); padding: 24px 0; }
 .db-footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
