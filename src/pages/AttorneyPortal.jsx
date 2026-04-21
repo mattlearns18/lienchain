@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import ReductionModal from "../components/ReductionModal.jsx";
+import "../components/ReductionModal.css";
 
 const C = {
   bg: "#06090f",
@@ -215,8 +217,10 @@ function PaymentModal({ onClose, onComplete, caseData }) {
 }
 
 export default function AttorneyPortal() {
-  const [showPayment, setShowPayment] = useState(false);
-  const [completed, setCompleted] = useState(false);
+  const [showPayment,    setShowPayment]    = useState(false);
+  const [showReduction,  setShowReduction]  = useState(false);
+  const [toast,          setToast]          = useState("");
+  const [completed,      setCompleted]      = useState(false);
   const caseData = MOCK_CASE;
 
   return (
@@ -225,11 +229,25 @@ export default function AttorneyPortal() {
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
       `}</style>
+      {toast && <div className="rm-toast">{toast}</div>}
       {showPayment && !completed && (
         <PaymentModal
           onClose={() => setShowPayment(false)}
           onComplete={() => { setCompleted(true); setShowPayment(false); }}
           caseData={caseData}
+        />
+      )}
+      {showReduction && (
+        <ReductionModal
+          caseId={caseData.caseId}
+          bill={caseData.billAmount}
+          split={caseData.lienCoShare}
+          attorneyName={caseData.attorney}
+          onClose={() => setShowReduction(false)}
+          onSubmitted={(id) => {
+            setToast(`Reduction request submitted for case ${id}`);
+            setTimeout(() => setToast(""), 3500);
+          }}
         />
       )}
       <nav style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto" }}>
@@ -304,7 +322,7 @@ export default function AttorneyPortal() {
               >
                 Settle Now — {fmt(caseData.settlementAmount)}
               </button>
-              <button style={{
+              <button onClick={() => setShowReduction(true)} style={{
                 flex: "1 1 180px",
                 padding: "18px 28px", borderRadius: 12, cursor: "pointer",
                 background: "transparent", color: C.text, border: `1px solid ${C.border}`,

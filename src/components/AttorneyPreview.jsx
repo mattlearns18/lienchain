@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./AttorneyPreview.css";
+import ReductionModal from "./ReductionModal.jsx";
 
 // Market compliance info
 const MARKET_INFO = {
@@ -175,8 +176,10 @@ function ComplianceBadges({ market }) {
 
 // ── Main exported component ──────────────────────────────────────────────────
 export default function AttorneyPreview({ liens, initialCaseId }) {
-  const [selectedId, setSelectedId] = useState(initialCaseId ?? liens[0]?.id ?? "");
-  const [showSettle, setShowSettle]  = useState(false);
+  const [selectedId,    setSelectedId]    = useState(initialCaseId ?? liens[0]?.id ?? "");
+  const [showSettle,    setShowSettle]    = useState(false);
+  const [showReduction, setShowReduction] = useState(false);
+  const [toast,         setToast]         = useState("");
 
   // Keep in sync if initialCaseId changes (from "Preview" button in lien table)
   if (initialCaseId && initialCaseId !== selectedId) {
@@ -190,7 +193,20 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
 
   return (
     <div className="ap-root">
+      {toast && <div className="rm-toast">{toast}</div>}
       {showSettle && <SettleModal lien={lien} onClose={() => setShowSettle(false)} />}
+      {showReduction && (
+        <ReductionModal
+          caseId={lien.id}
+          bill={lien.bill}
+          split={lien.split}
+          onClose={() => setShowReduction(false)}
+          onSubmitted={(id) => {
+            setToast(`Reduction request submitted for case ${id}`);
+            setTimeout(() => setToast(""), 3500);
+          }}
+        />
+      )}
 
       {/* Info banner */}
       <div className="ap-info-banner">
@@ -244,7 +260,7 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
         <button className="ap-settle-btn" onClick={() => setShowSettle(true)}>
           Settle Now — {usd(lien.bill)}
         </button>
-        <button className="ap-secondary-btn">Request Reduction</button>
+        <button className="ap-secondary-btn" onClick={() => setShowReduction(true)}>Request Reduction</button>
       </div>
 
       <p className="ap-disclaimer">
