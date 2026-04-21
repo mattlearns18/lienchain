@@ -101,8 +101,21 @@
 }
 .db-create-btn:hover { background: #2563eb; border-color: #2563eb; }
 
-/* Active lien status */
-.db-status-active { color: var(--green); font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+/* Lien status variants */
+.db-status-active { color: var(--green);  font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.db-status-draft  { color: var(--yellow); font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+
+/* Create Lien + badge group */
+.db-create-group { display: flex; align-items: center; gap: 6px; }
+
+/* Testnet amber pill badge */
+.db-testnet-pill {
+  background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35);
+  color: #fbbf24; padding: 3px 8px; border-radius: 99px;
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.5px;
+  white-space: nowrap; cursor: default;
+  /* tooltip via title attribute — no JS needed */
+}
 
 /* Refresh button */
 .db-refresh-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: border-color 0.15s; display: inline-flex; align-items: center; gap: 6px; }

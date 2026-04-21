@@ -1,5 +1,8 @@
 import { useState } from "react";
 import "./IntakeWizard.css";
+import { issueLienMPT } from "../lib/xrpl-tokenize.js";
+
+const DEMO_MODE = !import.meta.env.VITE_LIENCO_TESTNET_SEED;
 
 // ── Static data ──────────────────────────────────────────────────────────────
 const CLINICS = [
@@ -72,10 +75,12 @@ export default function IntakeWizard({ onClose, onComplete }) {
   const [purchasePrice, setPurchasePrice] = useState("");
 
   // Submission
-  const [submitting,  setSubmitting]  = useState(false);
-  const [submitStep,  setSubmitStep]  = useState(-1);
-  const [txHash,      setTxHash]      = useState("");
-  const [done,        setDone]        = useState(false);
+  const [submitting,   setSubmitting]  = useState(false);
+  const [submitStep,   setSubmitStep]  = useState(-1);
+  const [txHash,       setTxHash]      = useState("");
+  const [explorerUrl,  setExplorerUrl] = useState("");
+  const [done,         setDone]        = useState(false);
+  const [submitError,  setSubmitError] = useState("");
 
   // Derived
   const clinicName  = clinic === "Other" ? clinicOther : clinic;
@@ -91,33 +96,74 @@ export default function IntakeWizard({ onClose, onComplete }) {
   const step1Valid = clinic && (clinic !== "Other" || clinicOther.trim()) && market;
   const step2Valid = caseId.trim() && billNum > 0 && treatMonth && attorneyFirm.trim();
 
-  async function handleSubmit() {
-    setSubmitting(true);
-    const delays = [900, 1000, 1200, 900];
-    for (let i = 0; i < SUB_STEPS.length; i++) {
-      setSubmitStep(i);
-      await new Promise(r => setTimeout(r, delays[i]));
-    }
-    const hash = mockTxHash();
-    setTxHash(hash);
-    setDone(true);
-
+  function buildLienRecord(txHash, status) {
     const flags = [];
     if (market === "TX") flags.push("tx-72h");
     if (market === "IN") flags.push("in-nonassignable");
+    return {
+      id: caseId, market, clinic: clinicName, bill: billNum,
+      split: lienCoShare, ts: new Date().toISOString(),
+      tx1: txHash, tx2: null, flags, status,
+    };
+  }
 
-    onComplete({
-      id:     caseId,
-      market,
-      clinic: clinicName,
-      bill:   billNum,
-      split:  lienCoShare,
-      ts:     new Date().toISOString(),
-      tx1:    hash,
-      tx2:    null,
-      flags,
-      status: "Active",
-    });
+  async function handleSubmit() {
+    setSubmitting(true);
+    setSubmitError("");
+
+    if (DEMO_MODE) {
+      // ── Simulated tokenization ────────────────────────────────────────
+      const delays = [900, 1000, 1200, 900];
+      for (let i = 0; i < SUB_STEPS.length; i++) {
+        setSubmitStep(i);
+        await new Promise(r => setTimeout(r, delays[i]));
+      }
+      const hash = mockTxHash();
+      const url  = `https://testnet.xrpl.org/transactions/${hash}`;
+      setTxHash(hash);
+      setExplorerUrl(url);
+      setDone(true);
+      onComplete(buildLienRecord(hash, "Active"));
+      return;
+    }
+
+    // ── Real XRPL tokenization ────────────────────────────────────────
+    setSubmitStep(0); // Preparing transaction
+    await new Promise(r => setTimeout(r, 500));
+
+    setSubmitStep(1); // Connecting to XRPL testnet
+
+    const payload = {
+      id: caseId, bill: billNum, split: lienCoShare,
+      clinic: clinicName, market,
+      attorney: attorneyFirm,
+      purchasePrice: purchaseNum,
+      reductionNote,
+    };
+
+    // Advance to step 2 after 3 s; XRPL call runs in parallel
+    const [result] = await Promise.all([
+      issueLienMPT(payload),
+      new Promise(r => setTimeout(r, 3000)).then(() => setSubmitStep(2)),
+    ]);
+
+    if (result.success) {
+      setSubmitStep(3); // Confirming on ledger
+      await new Promise(r => setTimeout(r, 500));
+      setTxHash(result.txHash);
+      setExplorerUrl(result.explorerUrl);
+      setDone(true);
+      onComplete(buildLienRecord(result.txHash, "Active"));
+    } else {
+      // Show error — user can Try Again or Save as Draft
+      setSubmitError(result.error);
+      setSubmitting(false);
+    }
+  }
+
+  function handleSaveDraft() {
+    onComplete(buildLienRecord(null, "Draft"));
+    onClose();
   }
 
   return (
@@ -131,7 +177,7 @@ export default function IntakeWizard({ onClose, onComplete }) {
               <h2 className="wiz-title">Create New Lien</h2>
               <p className="wiz-sub">
                 {done
-                  ? "Lien tokenized successfully"
+                  ? DEMO_MODE ? "Lien tokenized (simulated)" : "Lien tokenized on XRPL Testnet"
                   : submitting
                   ? "Tokenizing…"
                   : `Step ${step + 1} of 4 — ${STEPS[step]}`}
@@ -284,8 +330,14 @@ export default function IntakeWizard({ onClose, onComplete }) {
         )}
 
         {/* ── STEP 4 — Review & Tokenize ── */}
-        {step === 3 && !submitting && !done && (
+        {step === 3 && !submitting && !done && !submitError && (
           <div className="wiz-body">
+            {DEMO_MODE && (
+              <div className="wiz-demo-banner">
+                Demo mode — tokenization will be simulated. Configure{" "}
+                <code>VITE_LIENCO_TESTNET_SEED</code> to enable real on-chain issuance.
+              </div>
+            )}
             <div className="wiz-review-grid">
               <div className="wiz-review-group">
                 <div className="wiz-review-heading">Clinic &amp; Market</div>
@@ -329,6 +381,21 @@ export default function IntakeWizard({ onClose, onComplete }) {
           </div>
         )}
 
+        {/* ── ERROR ── */}
+        {step === 3 && !submitting && !done && submitError && (
+          <div className="wiz-body wiz-error-body">
+            <div className="wiz-error-card">
+              <div className="wiz-error-icon">⚠</div>
+              <h4 className="wiz-error-title">Tokenization Failed</h4>
+              <p className="wiz-error-msg">{submitError}</p>
+            </div>
+            <div className="wiz-error-actions">
+              <button className="wiz-btn-secondary" onClick={() => setSubmitError("")}>← Try Again</button>
+              <button className="wiz-btn-primary" onClick={handleSaveDraft}>Save as Draft (skip tokenization)</button>
+            </div>
+          </div>
+        )}
+
         {/* ── SUBMITTING ── */}
         {submitting && !done && (
           <div className="wiz-body wiz-progress-body">
@@ -355,12 +422,16 @@ export default function IntakeWizard({ onClose, onComplete }) {
         {done && (
           <div className="wiz-body wiz-success-body">
             <div className="wiz-success-icon">✓</div>
-            <h3 className="wiz-success-title">Lien Tokenized</h3>
+            <h3 className="wiz-success-title">
+              {DEMO_MODE ? "Lien Tokenized (Simulated)" : "Lien Tokenized on XRPL Testnet"}
+            </h3>
             <p className="wiz-success-sub">
-              {caseId} has been issued as an MPT on XRPL testnet and added to your portfolio.
+              {caseId} has been issued{DEMO_MODE ? " (simulated)" : " as an NFT record"} on XRPL testnet and added to your portfolio.
             </p>
             <div className="wiz-tx-box">
-              <div className="wiz-tx-label">Transaction Hash</div>
+              <div className="wiz-tx-label">
+                Transaction Hash{DEMO_MODE ? " (simulated)" : ""}
+              </div>
               <code className="wiz-tx-hash">{txHash}</code>
             </div>
             <div className="wiz-attorney-link">
@@ -369,7 +440,7 @@ export default function IntakeWizard({ onClose, onComplete }) {
             </div>
             <div className="wiz-success-btns">
               <a
-                href={`https://testnet.xrpl.org/transactions/${txHash}`}
+                href={explorerUrl}
                 target="_blank" rel="noreferrer"
                 className="wiz-btn-secondary"
                 style={{ textDecoration: "none", textAlign: "center" }}

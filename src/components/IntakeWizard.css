@@ -164,6 +164,26 @@
 }
 .wiz-btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Demo mode banner */
+.wiz-demo-banner {
+  background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 0.82rem; color: #fbbf24; line-height: 1.5;
+}
+.wiz-demo-banner code { font-size: 0.78rem; color: #fcd34d; }
+
+/* Error state */
+.wiz-error-body { align-items: center; gap: 24px; padding-top: 32px; padding-bottom: 16px; }
+.wiz-error-card {
+  background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 12px; padding: 24px; text-align: center; width: 100%;
+}
+.wiz-error-icon  { font-size: 2rem; color: #f87171; margin-bottom: 10px; }
+.wiz-error-title { font-size: 1rem; font-weight: 700; color: #f87171; margin-bottom: 8px; }
+.wiz-error-msg   { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+.wiz-error-actions { display: flex; gap: 10px; width: 100%; flex-wrap: wrap; }
+.wiz-error-actions > * { flex: 1; min-width: 160px; }
+
 /* Progress / submitting */
 .wiz-progress-body { align-items: center; padding-top: 32px; padding-bottom: 36px; }
 .wiz-progress-title { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 28px; }

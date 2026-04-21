@@ -102,7 +102,12 @@ export default function Dashboard() {
             <button className="db-refresh-btn" onClick={fetchData} disabled={loading}>
               {loading ? <Spinner /> : "↻ Refresh"}
             </button>
-            <button className="db-create-btn" onClick={() => setShowIntake(true)}>+ Create Lien</button>
+            <div className="db-create-group">
+              <button className="db-create-btn" onClick={() => setShowIntake(true)}>+ Create Lien</button>
+              <span className="db-testnet-pill" title="Tokenization runs on XRPL Testnet. Production-ready architecture, zero real-money risk during pilot.">
+                XRPL TESTNET
+              </span>
+            </div>
             <Link to="/" className="db-nav-link">← Back to site</Link>
           </div>
         </div>
@@ -242,9 +247,15 @@ export default function Dashboard() {
                     <td>
                       {r.status === "Active"
                         ? <span className="db-status-active">🟢 Active</span>
+                        : r.status === "Draft"
+                        ? <span className="db-status-draft">📋 Draft</span>
                         : <span className="db-status-badge">✅ Settled</span>}
                     </td>
-                    <td><a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a></td>
+                    <td>
+                      {r.tx1
+                        ? <a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a>
+                        : <span className="db-muted">—</span>}
+                    </td>
                     <td>{r.tx2 ? <a href={EXPLORER + r.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx2)}</a> : <span className="db-muted">—</span>}</td>
                     <td>
                       <button
