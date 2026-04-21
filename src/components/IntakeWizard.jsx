@@ -124,34 +124,35 @@ export default function IntakeWizard({ onClose, onComplete }) {
     <div className="wiz-overlay" onClick={onClose}>
       <div className="wiz-modal" onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
-        <div className="wiz-header">
-          <div>
-            <h2 className="wiz-title">Create New Lien</h2>
-            <p className="wiz-sub">
-              {done
-                ? "Lien tokenized successfully"
-                : submitting
-                ? "Tokenizing…"
-                : `Step ${step + 1} of 4 — ${STEPS[step]}`}
-            </p>
+        {/* Sticky top — header + step indicator never scroll away */}
+        <div className="wiz-sticky-top">
+          <div className="wiz-header">
+            <div>
+              <h2 className="wiz-title">Create New Lien</h2>
+              <p className="wiz-sub">
+                {done
+                  ? "Lien tokenized successfully"
+                  : submitting
+                  ? "Tokenizing…"
+                  : `Step ${step + 1} of 4 — ${STEPS[step]}`}
+              </p>
+            </div>
+            <button className="wiz-close" onClick={onClose}>×</button>
           </div>
-          <button className="wiz-close" onClick={onClose}>×</button>
-        </div>
 
-        {/* Step indicator */}
-        {!submitting && !done && (
-          <div className="wiz-steps">
-            {STEPS.map((s, i) => (
-              <div key={s} className="wiz-step-item">
-                <div className={`wiz-step-dot ${i < step ? "dot-done" : i === step ? "dot-active" : "dot-idle"}`}>
-                  {i < step ? "✓" : i + 1}
+          {!submitting && !done && (
+            <div className="wiz-steps">
+              {STEPS.map((s, i) => (
+                <div key={s} className="wiz-step-item">
+                  <div className={`wiz-step-dot ${i < step ? "dot-done" : i === step ? "dot-active" : "dot-idle"}`}>
+                    {i < step ? "✓" : i + 1}
+                  </div>
+                  <span className="wiz-step-label">{s}</span>
                 </div>
-                <span className="wiz-step-label">{s}</span>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* ── STEP 1 — Clinic & Market ── */}
         {step === 0 && !submitting && (
@@ -188,10 +189,6 @@ export default function IntakeWizard({ onClose, onComplete }) {
               </div>
             )}
 
-            <div className="wiz-footer-btns">
-              <button className="wiz-btn-secondary" onClick={onClose}>Cancel</button>
-              <button className="wiz-btn-primary" disabled={!step1Valid} onClick={() => setStep(1)}>Next →</button>
-            </div>
           </div>
         )}
 
@@ -234,13 +231,6 @@ export default function IntakeWizard({ onClose, onComplete }) {
               <input className="wiz-input" value={attorneyBar} onChange={e => setAttorneyBar(e.target.value)} placeholder="e.g. MO Bar #54321" />
             </div>
 
-            <div className="wiz-footer-btns">
-              <button className="wiz-btn-secondary" onClick={() => setStep(0)}>← Back</button>
-              <button className="wiz-btn-primary" disabled={!step2Valid} onClick={() => {
-                if (!purchasePrice) setPurchasePrice(String(defaultPrice));
-                setStep(2);
-              }}>Next →</button>
-            </div>
           </div>
         )}
 
@@ -290,10 +280,6 @@ export default function IntakeWizard({ onClose, onComplete }) {
               <div className="wiz-preview-row"><span>Clinic Share ({clinicShare}%)</span><strong>${clinicAmt.toLocaleString()}</strong></div>
             </div>
 
-            <div className="wiz-footer-btns">
-              <button className="wiz-btn-secondary" onClick={() => setStep(1)}>← Back</button>
-              <button className="wiz-btn-primary" onClick={() => setStep(3)}>Next →</button>
-            </div>
           </div>
         )}
 
@@ -340,10 +326,6 @@ export default function IntakeWizard({ onClose, onComplete }) {
               ))}
             </div>
 
-            <div className="wiz-footer-btns">
-              <button className="wiz-btn-secondary" onClick={() => setStep(2)}>← Back</button>
-              <button className="wiz-btn-primary wiz-btn-submit" onClick={handleSubmit}>Submit &amp; Tokenize →</button>
-            </div>
           </div>
         )}
 
@@ -395,6 +377,33 @@ export default function IntakeWizard({ onClose, onComplete }) {
                 View on XRPL Explorer →
               </a>
               <button className="wiz-btn-primary" onClick={onClose}>Done</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── FIXED FOOTER — step nav buttons ── */}
+        {!submitting && !done && (
+          <div className="wiz-footer">
+            <div className="wiz-footer-btns">
+              {step === 0 && <>
+                <button className="wiz-btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="wiz-btn-primary" disabled={!step1Valid} onClick={() => setStep(1)}>Next →</button>
+              </>}
+              {step === 1 && <>
+                <button className="wiz-btn-secondary" onClick={() => setStep(0)}>← Back</button>
+                <button className="wiz-btn-primary" disabled={!step2Valid} onClick={() => {
+                  if (!purchasePrice) setPurchasePrice(String(defaultPrice));
+                  setStep(2);
+                }}>Next →</button>
+              </>}
+              {step === 2 && <>
+                <button className="wiz-btn-secondary" onClick={() => setStep(1)}>← Back</button>
+                <button className="wiz-btn-primary" onClick={() => setStep(3)}>Next →</button>
+              </>}
+              {step === 3 && <>
+                <button className="wiz-btn-secondary" onClick={() => setStep(2)}>← Back</button>
+                <button className="wiz-btn-primary wiz-btn-submit" onClick={handleSubmit}>Submit &amp; Tokenize →</button>
+              </>}
             </div>
           </div>
         )}
