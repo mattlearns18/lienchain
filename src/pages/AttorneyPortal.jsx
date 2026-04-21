@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import ReductionModal from "../components/ReductionModal.jsx";
-import "../components/ReductionModal.css";
 
 const C = {
   bg: "#06090f",
