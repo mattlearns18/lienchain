@@ -12,7 +12,13 @@ const C = {
   cyan: "#06b6d4",
   gold: "#f0b850",
   red: "#ef4444",
+  redDim: "rgba(239,68,68,0.1)",
+  redBorder: "rgba(239,68,68,0.3)",
+  amber: "#fbbf24",
+  amberDim: "rgba(245,158,11,0.1)",
+  amberBorder: "rgba(245,158,11,0.3)",
   green: "#22c55e",
+  greenDim: "rgba(34,197,94,0.08)",
   white: "#f1f5f9",
   text: "#c8d6e5",
   dim: "#6b7f96",
@@ -34,14 +40,14 @@ const MOCK_CASE = {
   billAmount: 8500,
   lienCoShare: 70,
   clinicShare: 30,
-  settlementAmount: 8500,
+  expectedSettlement: 25000,
   xrplAddress: "rLienCo...Main",
   caseStatus: "Active",
   daysOpen: 142,
   memo: "Medical lien for auto accident — MVA 11/05/2025",
 };
 
-const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function Section({ children, style = {} }) {
   return (
@@ -60,13 +66,137 @@ function InfoRow({ label, value, valueColor }) {
   );
 }
 
-function SplitVisual({ lienCo, clinic, total }) {
-  const lienCoAmt = total * lienCo / 100;
-  const clinicAmt = total * clinic / 100;
+// ── WaterfallSection (inline-styled, matches AttorneyPortal's design palette) ─
+function WaterfallSection({ bill, lienCoShare, clinicShare, onWaterfallChange }) {
+  const [gross,      setGross]      = useState(String(MOCK_CASE.expectedSettlement));
+  const [attyFeePct, setAttyFeePct] = useState(33);
+  const [costs,      setCosts]      = useState("");
+
+  const grossNum    = parseFloat(gross)  || 0;
+  const costsNum    = parseFloat(costs)  || 0;
+  const attyFeeAmt  = Math.round(grossNum * attyFeePct / 100);
+  const netAvailable  = grossNum - attyFeeAmt - costsNum;
+  const onChainAmount = Math.min(bill, Math.max(0, netAvailable));
+  const lienCoAmt     = onChainAmount * lienCoShare / 100;
+  const clinicAmt     = onChainAmount * clinicShare / 100;
+  const patientNet    = netAvailable - onChainAmount;
+
+  const isNetNeg     = netAvailable < 0;
+  const isPatientNeg = patientNet < 0 && !isNetNeg;
+
+  useEffect(() => {
+    onWaterfallChange({ grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable, onChainAmount, lienCoAmt, clinicAmt, patientNet });
+  }, [grossNum, attyFeePct, costsNum]);
+
+  const card = { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 32px", marginBottom: 24 };
+  const eyebrow = { fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 16, fontFamily: "'IBM Plex Mono', monospace" };
+  const label = { fontSize: 12, color: C.dim, fontFamily: "'IBM Plex Mono', monospace", display: "block", marginBottom: 6 };
+  const inputStyle = { width: "100%", background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", color: C.white, fontSize: 14, outline: "none", boxSizing: "border-box" };
+  const helpText = { fontSize: 11, color: C.dim, marginTop: 4 };
+  const divider = { height: 1, background: C.border, margin: "8px 0" };
+  const row = { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", fontSize: 14 };
+  const indented = { paddingLeft: 18, fontSize: 13 };
+
+  return (
+    <div style={card}>
+      <div style={eyebrow}>Settlement Waterfall</div>
+
+      {/* Inputs */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
+        <div>
+          <span style={label}>Gross Settlement Amount ($)</span>
+          <input
+            type="number" min="0" value={gross}
+            onChange={e => setGross(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <span style={label}>Attorney Fee — <strong style={{ color: C.white }}>{attyFeePct}%</strong></span>
+          <input
+            type="range" min={10} max={50} value={attyFeePct}
+            onChange={e => setAttyFeePct(Number(e.target.value))}
+            style={{ width: "100%", accentColor: C.teal, cursor: "pointer" }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.dim, marginTop: 2 }}>
+            <span>10%</span><span>50%</span>
+          </div>
+        </div>
+
+        <div>
+          <span style={label}>Case Costs ($)</span>
+          <input
+            type="number" min="0" value={costs}
+            onChange={e => setCosts(e.target.value)} placeholder="0"
+            style={inputStyle}
+          />
+          <div style={helpText}>Filing fees, depositions, expert witnesses, medical records, etc.</div>
+        </div>
+      </div>
+
+      {/* Breakdown table */}
+      <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px" }}>
+        <div style={row}>
+          <span style={{ color: C.dim }}>Gross Settlement</span>
+          <span style={{ color: C.white, fontWeight: 600 }}>{fmt(grossNum)}</span>
+        </div>
+        <div style={row}>
+          <span style={{ ...indented, color: C.dim }}>− Attorney Fee ({attyFeePct}%)</span>
+          <span style={{ color: C.muted, fontWeight: 400 }}>−{fmt(attyFeeAmt)}</span>
+        </div>
+        <div style={row}>
+          <span style={{ ...indented, color: C.dim }}>− Case Costs</span>
+          <span style={{ color: C.muted, fontWeight: 400 }}>−{fmt(costsNum)}</span>
+        </div>
+        <div style={divider} />
+        <div style={row}>
+          <span style={{ color: C.white, fontWeight: 600 }}>Net Available for Liens</span>
+          <span style={{ color: isNetNeg ? C.red : C.teal, fontWeight: 700, fontSize: 16 }}>
+            {fmt(Math.max(0, netAvailable))}
+          </span>
+        </div>
+        <div style={divider} />
+        <div style={row}>
+          <span style={{ ...indented, color: C.teal }}>LienCo ({lienCoShare}%)</span>
+          <span style={{ color: C.teal, fontWeight: 600 }}>{fmt(lienCoAmt)}</span>
+        </div>
+        <div style={row}>
+          <span style={{ ...indented, color: C.green }}>Clinic ({clinicShare}%)</span>
+          <span style={{ color: C.green, fontWeight: 600 }}>{fmt(clinicAmt)}</span>
+        </div>
+        <div style={divider} />
+        <div style={row}>
+          <span style={{ color: C.white, fontWeight: 600 }}>Patient Net Recovery</span>
+          <span style={{ color: isPatientNeg ? C.amber : C.white, fontWeight: 700, fontSize: 16 }}>
+            {fmt(patientNet)}
+          </span>
+        </div>
+      </div>
+
+      {/* Warnings */}
+      {isNetNeg && (
+        <div style={{ marginTop: 14, background: C.redDim, border: `1px solid ${C.redBorder}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.red, lineHeight: 1.5 }}>
+          Settlement does not cover attorney fees and costs. Consider requesting lien reduction.
+        </div>
+      )}
+      {isPatientNeg && (
+        <div style={{ marginTop: 14, background: C.amberDim, border: `1px solid ${C.amberBorder}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.amber, lineHeight: 1.5 }}>
+          ⚠ Settlement does not leave a net recovery for the patient. Lien reduction may be necessary.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SplitVisual ───────────────────────────────────────────────────────────────
+function SplitVisual({ lienCo, clinic, amount }) {
+  const lienCoAmt = amount * lienCo / 100;
+  const clinicAmt = amount * clinic / 100;
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, marginTop: 20 }}>
       <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14, fontFamily: "'IBM Plex Mono', monospace" }}>
-        Settlement Breakdown
+        On-Chain Split (net settlement amount)
       </div>
       <div style={{ display: "flex", height: 44, borderRadius: 10, overflow: "hidden", marginBottom: 16, border: `1px solid ${C.border}` }}>
         <div style={{ width: `${lienCo}%`, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", color: C.bg, fontWeight: 700, fontSize: 13 }}>
@@ -83,7 +213,7 @@ function SplitVisual({ lienCo, clinic, total }) {
           </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.teal, marginTop: 4 }}>{fmt(lienCoAmt)}</div>
         </div>
-        <div style={{ flex: 1, background: "rgba(34,197,94,0.08)", borderRadius: 10, padding: "14px 16px" }}>
+        <div style={{ flex: 1, background: C.greenDim, borderRadius: 10, padding: "14px 16px" }}>
           <div style={{ fontSize: 10, color: C.green, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.2, fontFamily: "'IBM Plex Mono', monospace" }}>
             To Clinic ({clinic}%)
           </div>
@@ -97,32 +227,30 @@ function SplitVisual({ lienCo, clinic, total }) {
 function ComplianceBadges({ state, statute }) {
   return (
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-      <div style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 8, padding: "8px 14px", fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>
-        ✓ {state} compliant
-      </div>
-      <div style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 8, padding: "8px 14px", fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>
-        ✓ {statute}
-      </div>
-      <div style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 8, padding: "8px 14px", fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>
-        ✓ HIPAA compliant
-      </div>
-      <div style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 8, padding: "8px 14px", fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>
-        ✓ Court admissible
-      </div>
+      {[`✓ ${state} compliant`, `✓ ${statute}`, "✓ HIPAA compliant", "✓ Court admissible"].map(b => (
+        <div key={b} style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 8, padding: "8px 14px", fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>
+          {b}
+        </div>
+      ))}
     </div>
   );
 }
 
-function PaymentModal({ onClose, onComplete, caseData }) {
-  const [phase, setPhase] = useState("confirm");
-  const [step, setStep] = useState(0);
+// ── PaymentModal ──────────────────────────────────────────────────────────────
+function PaymentModal({ onClose, onComplete, caseData, waterfall }) {
+  const [phase, setPhase]         = useState("confirm");
+  const [step, setStep]           = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("wire");
+
+  const settleAmt = waterfall?.onChainAmount ?? caseData.billAmount;
+  const lienCoAmt = waterfall?.lienCoAmt     ?? caseData.billAmount * caseData.lienCoShare / 100;
+  const clinicAmt = waterfall?.clinicAmt     ?? caseData.billAmount * caseData.clinicShare / 100;
 
   const steps = [
     { label: "Verifying attorney credentials", detail: caseData.attorneyBarNum },
-    { label: "Confirming lien details", detail: caseData.statute },
-    { label: "Executing settlement on XRPL", detail: "Hook auto-splitting funds" },
-    { label: "Settlement complete", detail: "3.2 seconds" },
+    { label: "Confirming lien details",         detail: caseData.statute },
+    { label: "Executing settlement on XRPL",    detail: "Hook auto-splitting funds" },
+    { label: "Settlement complete",             detail: "3.2 seconds" },
   ];
 
   useEffect(() => {
@@ -137,47 +265,87 @@ function PaymentModal({ onClose, onComplete, caseData }) {
     }
   }, [phase, step]);
 
+  function handleExecute() {
+    const memoData = {
+      case:               caseData.caseId,
+      grossSettlement:    waterfall?.grossNum,
+      attorneyFeePercent: waterfall?.attyFeePct,
+      attorneyFeeAmount:  waterfall?.attyFeeAmt,
+      caseCosts:          waterfall?.costsNum,
+      netAvailable:       waterfall?.netAvailable,
+      lienCoShare:        caseData.lienCoShare,
+      clinicShare:        caseData.clinicShare,
+      lienCoAmount:       lienCoAmt,
+      clinicAmount:       clinicAmt,
+      patientNetRecovery: waterfall?.patientNet,
+    };
+    console.log("[LienChain] Settlement memo (on-chain data):", memoData);
+    setPhase("running");
+    setStep(0);
+  }
+
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 20, padding: "36px 40px", width: "100%", maxWidth: 520, position: "relative", maxHeight: "90vh", overflowY: "auto" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 14, right: 18, background: "none", border: "none", color: C.dim, fontSize: 24, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+
         {phase === "confirm" && (
           <>
-            <h2 style={{ margin: "0 0 8px", fontSize: 22, color: C.white, fontFamily: "'Outfit', sans-serif", fontWeight: 700 }}>Confirm Settlement</h2>
-            <p style={{ color: C.dim, fontSize: 14, margin: "0 0 24px" }}>You're about to settle {caseData.caseId} for {fmt(caseData.settlementAmount)}</p>
+            <h2 style={{ margin: "0 0 4px", fontSize: 22, color: C.white, fontFamily: "'Outfit', sans-serif", fontWeight: 700 }}>Confirm Settlement</h2>
+            <p style={{ color: C.dim, fontSize: 14, margin: "0 0 20px" }}>Settling {caseData.caseId}</p>
+
+            {/* Waterfall summary — read-only */}
+            <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10, fontFamily: "'IBM Plex Mono', monospace" }}>Amount Settling On-Chain</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "5px 0", fontSize: 14 }}>
+                <span style={{ color: C.dim }}>Net of attorney fee &amp; case costs</span>
+                <span style={{ color: C.white, fontWeight: 700, fontSize: 18 }}>{fmt(settleAmt)}</span>
+              </div>
+              <div style={{ height: 1, background: C.border, margin: "8px 0" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
+                <span style={{ color: C.teal, paddingLeft: 14 }}>LienCo ({caseData.lienCoShare}%)</span>
+                <span style={{ color: C.teal, fontWeight: 600 }}>{fmt(lienCoAmt)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
+                <span style={{ color: C.green, paddingLeft: 14 }}>Clinic ({caseData.clinicShare}%)</span>
+                <span style={{ color: C.green, fontWeight: 600 }}>{fmt(clinicAmt)}</span>
+              </div>
+            </div>
+
+            {/* Payment method */}
             <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
               <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10, fontFamily: "'IBM Plex Mono', monospace" }}>Payment Method</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, border: `1px solid ${paymentMethod === "wire" ? C.teal : C.border}`, cursor: "pointer", background: paymentMethod === "wire" ? C.tealDim : "transparent" }}>
-                  <input type="radio" checked={paymentMethod === "wire"} onChange={() => setPaymentMethod("wire")} style={{ accentColor: C.teal }} />
-                  <div>
-                    <div style={{ fontSize: 14, color: C.white, fontWeight: 500 }}>Wire transfer → auto-convert to RLUSD</div>
-                    <div style={{ fontSize: 12, color: C.dim }}>Standard bank wire. We handle the conversion.</div>
-                  </div>
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, border: `1px solid ${paymentMethod === "rlusd" ? C.teal : C.border}`, cursor: "pointer", background: paymentMethod === "rlusd" ? C.tealDim : "transparent" }}>
-                  <input type="radio" checked={paymentMethod === "rlusd"} onChange={() => setPaymentMethod("rlusd")} style={{ accentColor: C.teal }} />
-                  <div>
-                    <div style={{ fontSize: 14, color: C.white, fontWeight: 500 }}>Direct RLUSD transfer</div>
-                    <div style={{ fontSize: 12, color: C.dim }}>If you already hold RLUSD. Fastest option.</div>
-                  </div>
-                </label>
+                {[
+                  { id: "wire",  title: "Wire transfer → auto-convert to RLUSD", sub: "Standard bank wire. We handle the conversion." },
+                  { id: "rlusd", title: "Direct RLUSD transfer",                  sub: "If you already hold RLUSD. Fastest option." },
+                ].map(m => (
+                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, border: `1px solid ${paymentMethod === m.id ? C.teal : C.border}`, cursor: "pointer", background: paymentMethod === m.id ? C.tealDim : "transparent" }}>
+                    <input type="radio" checked={paymentMethod === m.id} onChange={() => setPaymentMethod(m.id)} style={{ accentColor: C.teal }} />
+                    <div>
+                      <div style={{ fontSize: 14, color: C.white, fontWeight: 500 }}>{m.title}</div>
+                      <div style={{ fontSize: 12, color: C.dim }}>{m.sub}</div>
+                    </div>
+                  </label>
+                ))}
               </div>
             </div>
+
             <div style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 10, padding: 14, marginBottom: 20, fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace" }}>
-              By clicking Execute, you authorize settlement under {caseData.statute}. Transaction will be recorded on XRPL and signed with your Bar #{caseData.attorneyBarNum.replace('MO Bar #', '')} credentials.
+              By clicking Execute, you authorize settlement under {caseData.statute}. Transaction will be recorded on XRPL and signed with your Bar #{caseData.attorneyBarNum.replace("MO Bar #", "")} credentials.
             </div>
-            <button onClick={() => { setPhase("running"); setStep(0); }} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, color: C.bg, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Outfit', sans-serif", boxShadow: `0 8px 30px ${C.tealGlow}` }}>
-              Execute Settlement — {fmt(caseData.settlementAmount)}
+            <button onClick={handleExecute} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, color: C.bg, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Outfit', sans-serif", boxShadow: `0 8px 30px ${C.tealGlow}` }}>
+              Execute Settlement — {fmt(settleAmt)}
             </button>
           </>
         )}
+
         {(phase === "running" || phase === "done") && (
           <>
             <h2 style={{ margin: "0 0 8px", fontSize: 22, color: C.white, fontFamily: "'Outfit', sans-serif", fontWeight: 700 }}>
               {phase === "done" ? "Settlement Complete" : "Processing Settlement..."}
             </h2>
-            <p style={{ color: C.dim, fontSize: 14, margin: "0 0 28px" }}>{caseData.caseId} — {fmt(caseData.settlementAmount)}</p>
+            <p style={{ color: C.dim, fontSize: 14, margin: "0 0 28px" }}>{caseData.caseId} — {fmt(settleAmt)}</p>
             <div style={{ display: "flex", flexDirection: "column", marginBottom: 24 }}>
               {steps.map((s, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 14, opacity: (step >= i || phase === "done") ? 1 : 0.25, transition: "opacity 0.4s" }}>
@@ -215,18 +383,24 @@ function PaymentModal({ onClose, onComplete, caseData }) {
   );
 }
 
+// ── AttorneyPortal ────────────────────────────────────────────────────────────
 export default function AttorneyPortal() {
-  const [showPayment,    setShowPayment]    = useState(false);
-  const [showReduction,  setShowReduction]  = useState(false);
-  const [toast,          setToast]          = useState("");
-  const [completed,      setCompleted]      = useState(false);
+  const [showPayment,   setShowPayment]   = useState(false);
+  const [showReduction, setShowReduction] = useState(false);
+  const [toast,         setToast]         = useState("");
+  const [completed,     setCompleted]     = useState(false);
+  const [waterfall,     setWaterfall]     = useState(null);
   const caseData = MOCK_CASE;
+
+  // Default on-chain amount for the button label before user interacts with waterfall
+  const settleAmt = waterfall?.onChainAmount ?? caseData.billAmount;
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        input[type=number]::-webkit-inner-spin-button { opacity: 0.5; }
       `}</style>
       {toast && <div className="rm-toast">{toast}</div>}
       {showPayment && !completed && (
@@ -234,6 +408,7 @@ export default function AttorneyPortal() {
           onClose={() => setShowPayment(false)}
           onComplete={() => { setCompleted(true); setShowPayment(false); }}
           caseData={caseData}
+          waterfall={waterfall}
         />
       )}
       {showReduction && (
@@ -249,6 +424,8 @@ export default function AttorneyPortal() {
           }}
         />
       )}
+
+      {/* Nav */}
       <nav style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 900, color: C.bg, fontFamily: "'Outfit', sans-serif" }}>L</div>
@@ -257,13 +434,14 @@ export default function AttorneyPortal() {
         </div>
         <a href="/" style={{ fontSize: 13, color: C.dim, textDecoration: "none" }}>← Back to LienChain</a>
       </nav>
+
       <Section>
         {completed ? (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <div style={{ width: 80, height: 80, borderRadius: "50%", background: C.tealDim, border: `2px solid ${C.teal}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36, color: C.teal }}>✓</div>
             <h1 style={{ fontSize: 32, color: C.white, fontFamily: "'Outfit', sans-serif", fontWeight: 800, margin: "0 0 12px" }}>Settlement Complete</h1>
             <p style={{ fontSize: 16, color: C.text, maxWidth: 480, margin: "0 auto 28px", lineHeight: 1.6 }}>
-              {caseData.caseId} has been settled. {fmt(caseData.settlementAmount)} was distributed between LienCo and the clinic in 3.2 seconds. A full audit trail is available on the XRPL public ledger.
+              {caseData.caseId} has been settled. {fmt(settleAmt)} was distributed between LienCo and the clinic in 3.2 seconds. A full audit trail is available on the XRPL public ledger.
             </p>
             <a href="https://testnet.xrpl.org" target="_blank" rel="noopener" style={{ display: "inline-block", padding: "14px 32px", borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, color: C.bg, fontWeight: 700, fontSize: 14, textDecoration: "none", fontFamily: "'Outfit', sans-serif" }}>
               View on XRPL Explorer
@@ -271,6 +449,7 @@ export default function AttorneyPortal() {
           </div>
         ) : (
           <>
+            {/* Header */}
             <div style={{ marginBottom: 32 }}>
               <div style={{ fontSize: 11, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 }}>
                 Case Ready for Settlement
@@ -282,6 +461,8 @@ export default function AttorneyPortal() {
                 Attorney: <span style={{ color: C.text }}>{caseData.attorney}</span> · <span style={{ color: C.dim }}>{caseData.attorneyBarNum}</span>
               </p>
             </div>
+
+            {/* Case details */}
             <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 32px", marginBottom: 24 }}>
               <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6, fontFamily: "'IBM Plex Mono', monospace" }}>
                 Case Details
@@ -294,11 +475,23 @@ export default function AttorneyPortal() {
               <InfoRow label="Days Open" value={caseData.daysOpen + " days"} />
               <InfoRow label="Medical Bill Total" value={fmt(caseData.billAmount)} valueColor={C.white} />
             </div>
+
+            {/* Settlement Waterfall — above the split visual */}
+            <WaterfallSection
+              bill={caseData.billAmount}
+              lienCoShare={caseData.lienCoShare}
+              clinicShare={caseData.clinicShare}
+              onWaterfallChange={setWaterfall}
+            />
+
+            {/* Split visual — uses waterfall on-chain amount */}
             <SplitVisual
               lienCo={caseData.lienCoShare}
               clinic={caseData.clinicShare}
-              total={caseData.settlementAmount}
+              amount={settleAmt}
             />
+
+            {/* Compliance */}
             <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 16, padding: "24px 28px", marginTop: 20 }}>
               <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4, fontFamily: "'IBM Plex Mono', monospace" }}>
                 Compliance
@@ -308,6 +501,8 @@ export default function AttorneyPortal() {
               </p>
               <ComplianceBadges state={caseData.state} statute={caseData.statute} />
             </div>
+
+            {/* Actions */}
             <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
               <button onClick={() => setShowPayment(true)} style={{
                 flex: "1 1 280px",
@@ -316,10 +511,10 @@ export default function AttorneyPortal() {
                 fontSize: 15, fontWeight: 700, fontFamily: "'Outfit', sans-serif",
                 boxShadow: `0 8px 30px ${C.tealGlow}`, transition: "transform 0.2s",
               }}
-                onMouseEnter={e => e.target.style.transform = "translateY(-2px)"}
-                onMouseLeave={e => e.target.style.transform = "translateY(0)"}
+                onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
+                onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
               >
-                Settle Now — {fmt(caseData.settlementAmount)}
+                Settle Now — {fmt(settleAmt)}
               </button>
               <button onClick={() => setShowReduction(true)} style={{
                 flex: "1 1 180px",
@@ -330,6 +525,7 @@ export default function AttorneyPortal() {
                 Request Reduction
               </button>
             </div>
+
             <div style={{ marginTop: 32, padding: "20px 24px", background: C.surface, borderRadius: 12, fontSize: 13, color: C.dim, lineHeight: 1.7 }}>
               <strong style={{ color: C.text }}>No blockchain knowledge required.</strong> You enter your payment method — we handle the rest. Settlement completes in 3 seconds. Full audit trail on the XRPL public ledger. Questions? Contact <a href="mailto:support@lienchain.com" style={{ color: C.teal }}>support@lienchain.com</a>
             </div>

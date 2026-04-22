@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./AttorneyPreview.css";
 import ReductionModal from "./ReductionModal.jsx";
 
@@ -13,11 +13,137 @@ const MARKET_INFO = {
 
 const usd = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// ── Settlement animation modal (same logic as AttorneyPortal) ────────────────
-function SettleModal({ onClose, lien }) {
-  const [phase,       setPhase]      = useState("confirm");
-  const [step,        setStep]       = useState(0);
-  const [lienCoShare, setLienCoShare] = useState(lien.split ?? 70);
+// ── Waterfall calculator ──────────────────────────────────────────────────────
+function calcWaterfall(grossNum, attyFeePct, costsNum, bill, lienCoShare) {
+  const attyFeeAmt    = Math.round(grossNum * attyFeePct / 100);
+  const netAvailable  = grossNum - attyFeeAmt - costsNum;
+  // Lien is paid its face value (bill) from net; patient keeps the rest.
+  // If net < bill the lien is partially paid; if net < 0 nothing is paid.
+  const onChainAmount = Math.min(bill, Math.max(0, netAvailable));
+  const lienCoAmt     = onChainAmount * lienCoShare / 100;
+  const clinicAmt     = onChainAmount * (100 - lienCoShare) / 100;
+  const patientNet    = netAvailable - onChainAmount;
+  return { grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable, onChainAmount, lienCoAmt, clinicAmt, patientNet };
+}
+
+// ── WaterfallCard ─────────────────────────────────────────────────────────────
+function WaterfallCard({ bill, lienCoShare, onWaterfallChange }) {
+  const clinicShare    = 100 - lienCoShare;
+  const [gross,        setGross]       = useState(String(bill));
+  const [attyFeePct,   setAttyFeePct]  = useState(33);
+  const [costs,        setCosts]       = useState("");
+
+  const grossNum = parseFloat(gross)  || 0;
+  const costsNum = parseFloat(costs)  || 0;
+  const wf = calcWaterfall(grossNum, attyFeePct, costsNum, bill, lienCoShare);
+
+  useEffect(() => { onWaterfallChange(wf); }, [grossNum, attyFeePct, costsNum]);
+
+  const isNetNeg     = wf.netAvailable < 0;
+  const isPatientNeg = wf.patientNet < 0 && !isNetNeg;
+
+  return (
+    <div className="ap-waterfall-card">
+      <div className="ap-waterfall-title">Settlement Waterfall</div>
+
+      {/* Inputs */}
+      <div className="ap-wf-inputs">
+        <div className="ap-wf-field">
+          <label className="ap-wf-label">Gross Settlement Amount ($)</label>
+          <input
+            className="ap-wf-input" type="number" min="0"
+            value={gross} onChange={e => setGross(e.target.value)}
+          />
+        </div>
+
+        <div className="ap-wf-field">
+          <label className="ap-wf-label">
+            Attorney Fee — <strong style={{ color: "var(--text)" }}>{attyFeePct}%</strong>
+          </label>
+          <input
+            type="range" min={10} max={50} value={attyFeePct}
+            onChange={e => setAttyFeePct(Number(e.target.value))}
+            className="ap-wf-slider"
+          />
+          <div className="ap-wf-slider-labels"><span>10%</span><span>50%</span></div>
+        </div>
+
+        <div className="ap-wf-field">
+          <label className="ap-wf-label">Case Costs ($)</label>
+          <input
+            className="ap-wf-input" type="number" min="0"
+            value={costs} onChange={e => setCosts(e.target.value)} placeholder="0"
+          />
+          <span className="ap-wf-help">Filing fees, depositions, expert witnesses, medical records, etc.</span>
+        </div>
+      </div>
+
+      {/* Breakdown table */}
+      <div className="ap-wf-breakdown">
+        <div className="ap-wf-row">
+          <span className="ap-wf-row-label">Gross Settlement</span>
+          <span className="ap-wf-row-val">{usd(grossNum)}</span>
+        </div>
+        <div className="ap-wf-row">
+          <span className="ap-wf-row-label ap-wf-indent">− Attorney Fee ({attyFeePct}%)</span>
+          <span className="ap-wf-row-val ap-wf-neg">−{usd(wf.attyFeeAmt)}</span>
+        </div>
+        <div className="ap-wf-row">
+          <span className="ap-wf-row-label ap-wf-indent">− Case Costs</span>
+          <span className="ap-wf-row-val ap-wf-neg">−{usd(costsNum)}</span>
+        </div>
+        <div className="ap-wf-divider" />
+        <div className="ap-wf-row ap-wf-total">
+          <span className="ap-wf-row-label">Net Available for Liens</span>
+          <span className={`ap-wf-row-val ${isNetNeg ? "ap-wf-red" : "ap-wf-accent"}`}>
+            {usd(Math.max(0, wf.netAvailable))}
+          </span>
+        </div>
+        <div className="ap-wf-divider" />
+        <div className="ap-wf-row">
+          <span className="ap-wf-row-label ap-wf-indent ap-wf-teal">LienCo ({lienCoShare}%)</span>
+          <span className="ap-wf-row-val ap-wf-teal">{usd(wf.lienCoAmt)}</span>
+        </div>
+        <div className="ap-wf-row">
+          <span className="ap-wf-row-label ap-wf-indent ap-wf-green">Clinic ({clinicShare}%)</span>
+          <span className="ap-wf-row-val ap-wf-green">{usd(wf.clinicAmt)}</span>
+        </div>
+        <div className="ap-wf-divider" />
+        <div className="ap-wf-row ap-wf-total">
+          <span className="ap-wf-row-label">Patient Net Recovery</span>
+          <span className={`ap-wf-row-val ${isPatientNeg ? "ap-wf-amber" : ""}`}>
+            {usd(wf.patientNet)}
+          </span>
+        </div>
+      </div>
+
+      {/* Warnings */}
+      {isNetNeg && (
+        <div className="ap-flag-banner ap-flag-red">
+          Settlement does not cover attorney fees and costs. Consider requesting lien reduction.
+        </div>
+      )}
+      {isPatientNeg && (
+        <div className="ap-flag-banner ap-flag-orange">
+          ⚠ Settlement does not leave a net recovery for the patient. Lien reduction may be necessary.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SettleModal ───────────────────────────────────────────────────────────────
+function SettleModal({ onClose, lien, waterfall }) {
+  const [phase, setPhase] = useState("confirm");
+  const [step,  setStep]  = useState(0);
+
+  const lienCoShare = lien.split ?? 70;
+  const clinicShare = 100 - lienCoShare;
+
+  // On-chain: the lien face value (or whatever net can cover) gets split
+  const settleAmt = waterfall?.onChainAmount ?? lien.bill;
+  const lienCoAmt = waterfall?.lienCoAmt     ?? Math.floor(lien.bill * lienCoShare / 100);
+  const clinicAmt = waterfall?.clinicAmt     ?? (lien.bill - lienCoAmt);
 
   const steps = [
     { label: "Verifying attorney credentials",  detail: "Bar # on file" },
@@ -27,6 +153,22 @@ function SettleModal({ onClose, lien }) {
   ];
 
   async function run() {
+    // Memo data that will be embedded in the on-chain settlement tx
+    const memoData = {
+      case:               lien.id,
+      grossSettlement:    waterfall?.grossNum,
+      attorneyFeePercent: waterfall?.attyFeePct,
+      attorneyFeeAmount:  waterfall?.attyFeeAmt,
+      caseCosts:          waterfall?.costsNum,
+      netAvailable:       waterfall?.netAvailable,
+      lienCoShare,
+      clinicShare,
+      lienCoAmount:       lienCoAmt,
+      clinicAmount:       clinicAmt,
+      patientNetRecovery: waterfall?.patientNet,
+    };
+    console.log("[LienChain] Settlement memo (on-chain data):", memoData);
+
     setPhase("running");
     for (let i = 0; i < 4; i++) {
       setStep(i);
@@ -43,21 +185,25 @@ function SettleModal({ onClose, lien }) {
         {phase === "confirm" && (
           <>
             <h3 className="ap-modal-title">Confirm Settlement</h3>
-            <p className="ap-modal-sub">Settling <strong>{lien.id}</strong> for {usd(lien.bill)}</p>
+            <p className="ap-modal-sub">Settling <strong>{lien.id}</strong></p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
-                LienCo Share — <strong style={{ color: "var(--text)" }}>{lienCoShare}%</strong>
-                &nbsp;·&nbsp; Clinic Share — <strong style={{ color: "var(--text)" }}>{100 - lienCoShare}%</strong>
-              </label>
-              <input
-                type="range" min={0} max={100}
-                value={lienCoShare}
-                onChange={e => setLienCoShare(Number(e.target.value))}
-                style={{ width: "100%", accentColor: "var(--accent)", cursor: "pointer" }}
-              />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--muted)" }}>
-                <span>0%</span><span>100%</span>
+            {/* Read-only split summary — split is fixed from the wizard */}
+            <div className="ap-wf-breakdown">
+              <div className="ap-wf-row">
+                <span className="ap-wf-row-label">Amount settling on-chain</span>
+                <span className="ap-wf-row-val">{usd(settleAmt)}</span>
+              </div>
+              <div className="ap-wf-row" style={{ fontSize: "0.74rem", color: "var(--muted)" }}>
+                <span style={{ paddingLeft: 0 }}>Net of attorney fee &amp; case costs</span>
+              </div>
+              <div className="ap-wf-divider" />
+              <div className="ap-wf-row">
+                <span className="ap-wf-row-label ap-wf-indent ap-wf-teal">LienCo ({lienCoShare}%)</span>
+                <span className="ap-wf-row-val ap-wf-teal">{usd(lienCoAmt)}</span>
+              </div>
+              <div className="ap-wf-row">
+                <span className="ap-wf-row-label ap-wf-indent ap-wf-green">Clinic ({clinicShare}%)</span>
+                <span className="ap-wf-row-val ap-wf-green">{usd(clinicAmt)}</span>
               </div>
             </div>
 
@@ -66,7 +212,6 @@ function SettleModal({ onClose, lien }) {
                 ⛔ Indiana 20% floor applies — clinic must receive at least 20%.
               </div>
             )}
-
             {(lienCoShare < 30 || lienCoShare > 85) && (
               <div className="ap-flag-banner ap-flag-orange">
                 ⚠ Unusual split ratio — please confirm reduction note fully documents the negotiation.
@@ -74,11 +219,12 @@ function SettleModal({ onClose, lien }) {
             )}
 
             <div className="ap-legal-note">
-              By clicking Execute, you authorize settlement under {MARKET_INFO[lien.market]?.statute ?? "applicable statute"}.
+              By clicking Execute, you authorize settlement under{" "}
+              {MARKET_INFO[lien.market]?.statute ?? "applicable statute"}.
               Transaction will be recorded on the XRPL public ledger.
             </div>
             <button className="ap-execute-btn" onClick={run}>
-              Execute Settlement — {usd(lien.bill)}
+              Execute Settlement — {usd(settleAmt)}
             </button>
           </>
         )}
@@ -88,7 +234,7 @@ function SettleModal({ onClose, lien }) {
             <h3 className="ap-modal-title">
               {phase === "done" ? "Settlement Complete" : "Processing…"}
             </h3>
-            <p className="ap-modal-sub">{lien.id} — {usd(lien.bill)}</p>
+            <p className="ap-modal-sub">{lien.id} — {usd(settleAmt)}</p>
             <div className="ap-steps">
               {steps.map((s, i) => (
                 <div key={i} className={`ap-step ${(step >= i || phase === "done") ? "ap-step-active" : ""}`}>
@@ -118,14 +264,14 @@ function SettleModal({ onClose, lien }) {
   );
 }
 
-// ── SplitVisual ──────────────────────────────────────────────────────────────
-function SplitVisual({ lienCoShare, bill }) {
+// ── SplitVisual ───────────────────────────────────────────────────────────────
+function SplitVisual({ lienCoShare, amount }) {
   const clinicShare = 100 - lienCoShare;
-  const lienCoAmt   = Math.floor(bill * lienCoShare / 100);
-  const clinicAmt   = bill - lienCoAmt;
+  const lienCoAmt   = Math.floor(amount * lienCoShare / 100);
+  const clinicAmt   = amount - lienCoAmt;
   return (
     <div className="ap-split-card">
-      <div className="ap-split-label">Settlement Breakdown</div>
+      <div className="ap-split-label">On-Chain Split (net settlement amount)</div>
       <div className="ap-split-bar">
         <div className="ap-seg ap-seg-lienco" style={{ width: `${lienCoShare}%` }}>{lienCoShare}%</div>
         <div className="ap-seg ap-seg-clinic"  style={{ width: `${clinicShare}%` }}>{clinicShare}%</div>
@@ -144,7 +290,7 @@ function SplitVisual({ lienCoShare, bill }) {
   );
 }
 
-// ── ComplianceBadges ─────────────────────────────────────────────────────────
+// ── ComplianceBadges ──────────────────────────────────────────────────────────
 function ComplianceBadges({ market }) {
   const info = MARKET_INFO[market] ?? { state: "Unknown", statute: "N/A", flags: [] };
   return (
@@ -174,16 +320,18 @@ function ComplianceBadges({ market }) {
   );
 }
 
-// ── Main exported component ──────────────────────────────────────────────────
+// ── Main exported component ───────────────────────────────────────────────────
 export default function AttorneyPreview({ liens, initialCaseId }) {
   const [selectedId,    setSelectedId]    = useState(initialCaseId ?? liens[0]?.id ?? "");
   const [showSettle,    setShowSettle]    = useState(false);
   const [showReduction, setShowReduction] = useState(false);
   const [toast,         setToast]         = useState("");
+  const [waterfall,     setWaterfall]     = useState(null);
 
   // Keep in sync if initialCaseId changes (from "Preview" button in lien table)
   if (initialCaseId && initialCaseId !== selectedId) {
     setSelectedId(initialCaseId);
+    setWaterfall(null);
   }
 
   const lien = liens.find(l => l.id === selectedId) ?? liens[0];
@@ -191,10 +339,19 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
 
   const info = MARKET_INFO[lien.market] ?? { state: "Unknown", statute: "N/A" };
 
+  // Use waterfall-computed amount for split visual; fall back to bill if waterfall not set yet
+  const splitAmount = waterfall?.onChainAmount ?? lien.bill;
+
   return (
     <div className="ap-root">
       {toast && <div className="rm-toast">{toast}</div>}
-      {showSettle && <SettleModal lien={lien} onClose={() => setShowSettle(false)} />}
+      {showSettle && (
+        <SettleModal
+          lien={lien}
+          waterfall={waterfall}
+          onClose={() => setShowSettle(false)}
+        />
+      )}
       {showReduction && (
         <ReductionModal
           caseId={lien.id}
@@ -220,7 +377,7 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
         <select
           className="ap-selector"
           value={selectedId}
-          onChange={e => setSelectedId(e.target.value)}
+          onChange={e => { setSelectedId(e.target.value); setWaterfall(null); }}
         >
           {liens.map(l => (
             <option key={l.id} value={l.id}>
@@ -235,7 +392,6 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
         <div className="ap-case-eyebrow">Case Ready for Settlement</div>
         <h2 className="ap-case-id">{lien.id}</h2>
         <p className="ap-case-meta">Clinic: <strong>{lien.clinic}</strong> · Market: <strong>{lien.market}</strong> · {info.state}</p>
-
         <div className="ap-info-grid">
           {[
             ["Clinic",          lien.clinic],
@@ -252,13 +408,23 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
         </div>
       </div>
 
-      <SplitVisual lienCoShare={lien.split} bill={lien.bill} />
+      {/* Waterfall — above the split visual */}
+      <WaterfallCard
+        key={lien.id}
+        bill={lien.bill}
+        lienCoShare={lien.split ?? 70}
+        onWaterfallChange={setWaterfall}
+      />
+
+      {/* Split visual — driven by waterfall's on-chain amount */}
+      <SplitVisual lienCoShare={lien.split ?? 70} amount={splitAmount} />
+
       <ComplianceBadges market={lien.market} />
 
       {/* Action buttons */}
       <div className="ap-actions">
         <button className="ap-settle-btn" onClick={() => setShowSettle(true)}>
-          Settle Now — {usd(lien.bill)}
+          Settle Now — {usd(splitAmount)}
         </button>
         <button className="ap-secondary-btn" onClick={() => setShowReduction(true)}>Request Reduction</button>
       </div>

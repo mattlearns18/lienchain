@@ -175,3 +175,50 @@
 
 /* Empty state */
 .ap-empty { padding: 48px 24px; text-align: center; color: var(--muted); font-size: 0.9rem; }
+
+/* ── Waterfall card ─────────────────────────────────────────────────────────── */
+.ap-waterfall-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.ap-waterfall-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 700; }
+
+/* Waterfall inputs */
+.ap-wf-inputs { display: flex; flex-direction: column; gap: 14px; }
+.ap-wf-field { display: flex; flex-direction: column; gap: 5px; }
+.ap-wf-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.ap-wf-input {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 9px 12px;
+  color: var(--text); font-size: 0.9rem; outline: none;
+  transition: border-color 0.15s; width: 100%;
+}
+.ap-wf-input:focus { border-color: var(--accent); }
+.ap-wf-slider { width: 100%; accent-color: var(--accent); cursor: pointer; margin-top: 4px; }
+.ap-wf-slider-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); }
+.ap-wf-help { font-size: 0.74rem; color: var(--muted); }
+
+/* Waterfall breakdown table */
+.ap-wf-breakdown {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px;
+  display: flex; flex-direction: column;
+}
+.ap-wf-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 0.85rem; gap: 10px; }
+.ap-wf-row-label { color: var(--muted); }
+.ap-wf-row-val { font-weight: 600; color: var(--text); white-space: nowrap; }
+.ap-wf-indent { padding-left: 16px; font-size: 0.82rem; }
+.ap-wf-neg { color: var(--muted); font-weight: 400; }
+.ap-wf-divider { height: 1px; background: var(--border); margin: 5px 0; }
+
+/* Total row — slightly larger + bolder */
+.ap-wf-total .ap-wf-row-label { color: var(--text); font-weight: 600; }
+.ap-wf-total .ap-wf-row-val { font-size: 0.95rem; }
+
+/* Colour variants */
+.ap-wf-accent { color: var(--accent); }
+.ap-wf-teal   { color: var(--accent); }
+.ap-wf-green  { color: var(--green); }
+.ap-wf-amber  { color: #fbbf24; }
+.ap-wf-red    { color: #f87171; }
