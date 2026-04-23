@@ -65,6 +65,8 @@ lienchain/
 - **Texas — 72-hour filing window.** A warning surfaces reminding the user that Texas requires the lien to be filed/recorded within 72 hours of assignment.
 - **Missouri (KC/STL), Nevada — no special flags currently.** Add them as statutes are confirmed.
 
+**Operator vs. attorney view separation.** Settlement math — gross settlement, attorney fee %, case costs, net available for liens, patient net recovery — belongs to the attorney. It must never surface in the operator-side tabs (Dashboard, Liens, Settlements, Compliance). The only place these figures appear in the operator app is the read-only "Attorney View" preview tab, which is explicitly framed as a preview of `/attorney/:caseId`. Keep this boundary tight; it's a compliance concern and a UX contract with clinics who shouldn't see client-side fee splits.
+
 ## 5. Working Conventions
 
 Matt is non-technical. When explaining a change, walk through what it does and why before showing code. Avoid unexplained jargon — if "MPT" or "trust line" or "WebSocket" comes up, define it the first time in that session.
@@ -79,9 +81,13 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 ## 6. Current State
 
-**Phase 3 is complete.** Real XRPL tokenization is working on the live site — intake wizard mints a real testnet MPT, the dashboard reads it back, the attorney preview animates the settlement and flags compliance issues correctly across all five markets. `phase1-proof.md` documents the testnet settlement proofs (TX 72%, NV 65%, IN 70% LienCo splits) with verifiable XRPL Explorer links.
+**Phase 3 and Phase 4 are complete.**
 
-**Next queued build: Settlement Waterfall for the attorney portal.** The attorney needs a view that takes a gross settlement number and walks down through liens (medical, subrogation, attorney fees, client net) in the right priority order, applying the agreed splits and any reductions, and produces a clear breakdown of who gets paid what. This builds on `AttorneyPortal.jsx` and the existing `AttorneyPreview` modal.
+*Phase 3* — real XRPL tokenization on the live site. Intake wizard mints a real testnet MPT, the dashboard reads it back, the attorney preview animates the 4-step settlement and flags compliance issues correctly across all five markets. `phase1-proof.md` documents the testnet settlement proofs (TX 72%, NV 65%, IN 70% LienCo splits) with verifiable XRPL Explorer links.
+
+*Phase 4* — Settlement Waterfall in the attorney portal (`/attorney/:caseId`). Attorneys enter a gross settlement number and the portal walks down through attorney fee, case costs, net available, and the agreed LienCo/clinic split to produce a clean breakdown of who gets paid what. The operator Dashboard was restructured in the same pass into 5 tabs — Dashboard, Liens, Settlements, Compliance, Attorney View — with a shared market filter chip row (All / KC / STL / TX / NV / IN). Wallet balance fetches were migrated from HTTP JSON-RPC to WebSocket to fix a CORS-induced em-dash bug. Explorer URL construction was fixed on the `/attorney/demo` success screen.
+
+**Next queued build: TBD.** Waterfall was the last queued item. Candidates to weigh in the next planning session: per-state config extraction (the `MARKETS` / `MARKET_INFO` refactor called out in §4), secondary-market bid UI, attorney onboarding/invite flow, portfolio analytics, or mainnet readiness work. Decide with Matt before committing to one.
 
 ## 7. Business Gaps Still Open
 
