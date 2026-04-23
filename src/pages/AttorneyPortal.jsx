@@ -25,6 +25,14 @@ const C = {
   muted: "#3d5068",
 };
 
+// Demo transaction hash used by the mocked PaymentModal flow on /attorney/demo.
+// Real settlements (Dashboard → Create Lien) use the hash produced by
+// issueLienMPT in xrpl-tokenize.js. This constant exists so the displayed
+// hash and the XRPL Explorer link below it reference the same value.
+const DEMO_TX_HASH = "A8F2D1C9B3E73FE9E8BC5D7E5FC4A4D3B2A190E7C8D5F3B6A1E4C2F0D8B7A9B3E";
+const DEMO_EXPLORER_URL = `https://testnet.xrpl.org/transactions/${DEMO_TX_HASH}`;
+const DEMO_TX_HASH_SHORT = `${DEMO_TX_HASH.slice(0, 12)}…${DEMO_TX_HASH.slice(-4)}`;
+
 const MOCK_CASE = {
   caseId: "PI-LIEN-KC-001",
   market: "KC",
@@ -366,9 +374,9 @@ function PaymentModal({ onClose, onComplete, caseData, waterfall }) {
               <>
                 <div style={{ background: C.tealDim, border: `1px solid ${C.teal}40`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
                   <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6, fontFamily: "'IBM Plex Mono', monospace" }}>Transaction Hash</div>
-                  <div style={{ fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", wordBreak: "break-all" }}>A8F2D1C9B3E7...9B3E</div>
+                  <div style={{ fontSize: 12, color: C.teal, fontFamily: "'IBM Plex Mono', monospace", wordBreak: "break-all" }}>{DEMO_TX_HASH_SHORT}</div>
                 </div>
-                <a href="https://testnet.xrpl.org" target="_blank" rel="noopener" style={{ display: "block", textAlign: "center", padding: "12px 0", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, color: C.teal, fontWeight: 600, fontSize: 13, textDecoration: "none", marginBottom: 10 }}>
+                <a href={DEMO_EXPLORER_URL} target="_blank" rel="noopener" style={{ display: "block", textAlign: "center", padding: "12px 0", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, color: C.teal, fontWeight: 600, fontSize: 13, textDecoration: "none", marginBottom: 10 }}>
                   View on XRPL Explorer →
                 </a>
                 <button onClick={onComplete} style={{ width: "100%", padding: "12px 0", borderRadius: 10, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, color: C.bg, border: "none", fontWeight: 700, cursor: "pointer", fontSize: 14, fontFamily: "'Outfit', sans-serif" }}>
@@ -443,7 +451,7 @@ export default function AttorneyPortal() {
             <p style={{ fontSize: 16, color: C.text, maxWidth: 480, margin: "0 auto 28px", lineHeight: 1.6 }}>
               {caseData.caseId} has been settled. {fmt(settleAmt)} was distributed between LienCo and the clinic in 3.2 seconds. A full audit trail is available on the XRPL public ledger.
             </p>
-            <a href="https://testnet.xrpl.org" target="_blank" rel="noopener" style={{ display: "inline-block", padding: "14px 32px", borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, color: C.bg, fontWeight: 700, fontSize: 14, textDecoration: "none", fontFamily: "'Outfit', sans-serif" }}>
+            <a href={DEMO_EXPLORER_URL} target="_blank" rel="noopener" style={{ display: "inline-block", padding: "14px 32px", borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, color: C.bg, fontWeight: 700, fontSize: 14, textDecoration: "none", fontFamily: "'Outfit', sans-serif" }}>
               View on XRPL Explorer
             </a>
           </div>

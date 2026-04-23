@@ -30,6 +30,19 @@ const FLAG_INFO = {
   "in-nonassignable": { label: "IN Non-Assignable", color: "flag-red",   tip: "Indiana statute limits lien assignability in PI cases. Confirm assignment validity before secondary transfer." },
 };
 
+// Market filter options (order matters — matches the segmented control rendering)
+const MARKETS = ["All", "KC", "STL", "TX", "NV", "IN"];
+
+// Per-state compliance summary shown in the Compliance tab.
+// Kept conservative — only claims the project has confirmed (see CLAUDE.md §4).
+const MARKET_INFO = {
+  KC:  { state: "Missouri", flags: [],                   notes: "Standard PI lien perfection. No special state-level restrictions currently tracked." },
+  STL: { state: "Missouri", flags: [],                   notes: "Standard PI lien perfection. No special state-level restrictions currently tracked." },
+  TX:  { state: "Texas",    flags: ["tx-72h"],           notes: "72-hour rescission window after assignment. File/record the lien within 72 hours." },
+  NV:  { state: "Nevada",   flags: [],                   notes: "No special state-level restrictions currently tracked." },
+  IN:  { state: "Indiana",  flags: ["in-nonassignable"], notes: "Indiana applies a 20% clinic floor and limits lien assignability. Confirm assignability before secondary transfer." },
+};
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const usd      = (n) => `$${Number(n).toLocaleString()}`;
 const shortH   = (h) => h ? `${h.slice(0, 8)}…${h.slice(-6)}` : "—";
@@ -37,6 +50,7 @@ const fmtDate  = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "sh
 const fmtTime  = (d)   => d instanceof Date && !isNaN(d)
   ? d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
   : "—";
+const isSettled = (r) => !r.status || r.status === "Settled";
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 function Spinner() {
@@ -46,6 +60,7 @@ function Spinner() {
 function FlagBadge({ flag }) {
   const [tip, setTip] = useState(false);
   const info = FLAG_INFO[flag];
+  if (!info) return null;
   return (
     <span className={`flag-badge ${info.color}`} onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
       {info.label}
@@ -54,17 +69,121 @@ function FlagBadge({ flag }) {
   );
 }
 
+function MarketFilter({ value, onChange }) {
+  return (
+    <div className="db-mkt-filter" role="tablist" aria-label="Market filter">
+      {MARKETS.map((m) => (
+        <button
+          key={m}
+          type="button"
+          className={`db-mkt-chip ${value === m ? "db-mkt-chip-active" : ""}`}
+          onClick={() => onChange(m)}
+          aria-pressed={value === m}
+        >
+          {m === "All" ? "All Markets" : m}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LienRow({ r, onPreview }) {
+  return (
+    <tr>
+      <td className="db-lien-id">{r.id}</td>
+      <td><span className="db-market-chip">{r.market}</span></td>
+      <td>{usd(r.bill)}</td>
+      <td>{r.split}% / {100 - r.split}%</td>
+      <td className="db-muted">{fmtDate(r.ts)}</td>
+      <td className="db-flags-cell">
+        {r.flags.length ? r.flags.map(f => <FlagBadge key={f} flag={f} />) : <span className="db-muted">—</span>}
+      </td>
+      <td>
+        {r.status === "Active"
+          ? <span className="db-status-active">🟢 Active</span>
+          : r.status === "Draft"
+          ? <span className="db-status-draft">📋 Draft</span>
+          : <span className="db-status-badge">✅ Settled</span>}
+      </td>
+      <td>
+        {r.tx1
+          ? <a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a>
+          : <span className="db-muted">—</span>}
+      </td>
+      <td>
+        {r.tx2
+          ? <a href={EXPLORER + r.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx2)}</a>
+          : <span className="db-muted">—</span>}
+      </td>
+      <td>
+        <button className="db-preview-btn" onClick={() => onPreview(r.id)}>Attorney View →</button>
+      </td>
+    </tr>
+  );
+}
+
+function LienTable({ rows, emptyText, onPreview }) {
+  if (!rows.length) {
+    return <div className="db-feed-empty">{emptyText}</div>;
+  }
+  return (
+    <div className="db-table-wrap">
+      <table className="db-table">
+        <thead>
+          <tr>
+            <th>Lien ID</th>
+            <th>Market</th>
+            <th>Bill</th>
+            <th>Split</th>
+            <th>Date</th>
+            <th>Flags</th>
+            <th>Status</th>
+            <th>TX 1</th>
+            <th>TX 2</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => <LienRow key={r.id} r={r} onPreview={onPreview} />)}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ComplianceStateCard({ code, info, liens }) {
+  const marketLiens = liens.filter(r => r.market === code);
+  const flaggedLiens = marketLiens.filter(r => r.flags.length);
+  return (
+    <div className="db-market-card">
+      <div className="db-market-header">
+        <span className="db-market-chip">{code}</span>
+        <span className="db-muted">{info.state}</span>
+        {info.flags.map(f => <FlagBadge key={f} flag={f} />)}
+      </div>
+      <div className="db-compliance-notes">{info.notes}</div>
+      <div className="db-muted db-compliance-count">
+        {marketLiens.length
+          ? `${marketLiens.length} lien${marketLiens.length === 1 ? "" : "s"} in this market` +
+            (flaggedLiens.length ? ` · ${flaggedLiens.length} flagged` : "")
+          : "No liens in this market yet"}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const [wallets,     setWallets]    = useState(WALLETS.map(w => ({ ...w, balance: null })));
-  const [activity,    setActivity]   = useState([]);
-  const [loading,     setLoading]    = useState(true);
-  const [error,       setError]      = useState(null);
-  const [lastFetch,   setLastFetch]  = useState(null);
-  const [liens,         setLiens]        = useState(SETTLEMENTS);
-  const [showIntake,    setShowIntake]   = useState(false);
-  const [activeTab,     setActiveTab]    = useState("dashboard");
+  const [wallets,       setWallets]       = useState(WALLETS.map(w => ({ ...w, balance: null })));
+  const [activity,      setActivity]      = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState(null);
+  const [lastFetch,     setLastFetch]     = useState(null);
+  const [liens,         setLiens]         = useState(SETTLEMENTS);
+  const [showIntake,    setShowIntake]    = useState(false);
+  const [activeTab,     setActiveTab]     = useState("dashboard");
   const [previewCaseId, setPreviewCaseId] = useState(null);
+  const [market,        setMarket]        = useState("All");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -86,8 +205,31 @@ export default function Dashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const totalVolume  = liens.reduce((s, r) => s + r.bill, 0);
-  const avgSplit     = liens.length ? Math.round(liens.reduce((s, r) => s + r.split, 0) / liens.length) : 0;
+  // Filter liens by selected market (All = no filter)
+  const filteredLiens = market === "All" ? liens : liens.filter(r => r.market === market);
+  const settledLiens  = filteredLiens.filter(isSettled);
+
+  // Stats reflect the active market filter
+  const totalVolume = filteredLiens.reduce((s, r) => s + r.bill, 0);
+  const avgSplit    = filteredLiens.length
+    ? Math.round(filteredLiens.reduce((s, r) => s + r.split, 0) / filteredLiens.length)
+    : 0;
+
+  const handlePreview = (caseId) => {
+    setPreviewCaseId(caseId);
+    setActiveTab("attorney");
+  };
+
+  const marketLabel = market === "All" ? "" : ` · ${market}`;
+  const showMarketFilter = activeTab !== "attorney";
+
+  const TABS = [
+    { id: "dashboard",   label: "Dashboard"   },
+    { id: "liens",       label: "Liens"       },
+    { id: "settlements", label: "Settlements" },
+    { id: "compliance",  label: "Compliance"  },
+    { id: "attorney",    label: "Attorney View" },
+  ];
 
   return (
     <div className="db-root">
@@ -116,20 +258,24 @@ export default function Dashboard() {
       {/* TAB BAR */}
       <div className="db-tab-bar">
         <div className="db-container db-tab-inner">
-          <button
-            className={`db-tab ${activeTab === "dashboard" ? "db-tab-active" : ""}`}
-            onClick={() => setActiveTab("dashboard")}
-          >
-            Dashboard
-          </button>
-          <button
-            className={`db-tab ${activeTab === "attorney" ? "db-tab-active" : ""}`}
-            onClick={() => setActiveTab("attorney")}
-          >
-            Attorney View
-          </button>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={`db-tab ${activeTab === t.id ? "db-tab-active" : ""}`}
+              onClick={() => setActiveTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* MARKET FILTER — hidden on Attorney View */}
+      {showMarketFilter && (
+        <div className="db-container db-mkt-row">
+          <MarketFilter value={market} onChange={setMarket} />
+        </div>
+      )}
 
       <div className="db-container db-body">
 
@@ -138,234 +284,252 @@ export default function Dashboard() {
           <AttorneyPreview liens={liens} initialCaseId={previewCaseId} />
         )}
 
+        {/* DASHBOARD TAB — overview stats + wallet panel + live activity */}
         {activeTab === "dashboard" && <>
-
-        {/* HEADER */}
-        <div className="db-header">
-          <div>
-            <h1 className="db-title">Multi-Market Dashboard</h1>
-            <p className="db-sub">Live XRPL Testnet · All transactions verifiable on-chain</p>
-          </div>
-          <span className="db-badge db-badge-blue">v3</span>
-        </div>
-
-        {/* ERROR BANNER */}
-        {error && (
-          <div className="db-error-banner">
-            ⚠ {error}
-            <button className="db-retry-btn" onClick={fetchData}>Retry</button>
-          </div>
-        )}
-
-        {/* FLAG BANNERS */}
-        <div className="db-flags-row">
-          <div className="db-flag-alert flag-alert-orange">
-            <strong>⚠ TX 72-Hour Flag</strong>
-            <span>Texas lien PI-LIEN-2026-04-TX001 is within the 72-hour rescission window. Monitor for reversal requests before secondary transfer.</span>
-          </div>
-          <div className="db-flag-alert flag-alert-red">
-            <strong>⛔ IN Non-Assignable Warning</strong>
-            <span>Indiana statute limits lien assignability in PI cases. Confirm assignment validity for PI-LIEN-2026-04-IN001 before secondary transfer.</span>
-          </div>
-        </div>
-
-        {/* STATS */}
-        <div className="db-stats">
-          {[
-            { label: "Total Volume",     value: usd(totalVolume) },
-            { label: "Liens Settled",    value: liens.length },
-            { label: "Markets Active",   value: new Set(liens.map(r => r.market)).size },
-            { label: "Avg LienCo Split", value: `${avgSplit}%` },
-          ].map(({ label, value }) => (
-            <div className="db-stat-card" key={label}>
-              <span className="db-stat-val">{value}</span>
-              <span className="db-stat-label">{label}</span>
+          <div className="db-header">
+            <div>
+              <h1 className="db-title">Multi-Market Dashboard{marketLabel}</h1>
+              <p className="db-sub">Live XRPL Testnet · All transactions verifiable on-chain</p>
             </div>
-          ))}
-        </div>
-
-        {/* WALLET PANEL */}
-        <section className="db-section">
-          <div className="db-section-header">
-            <h2 className="db-section-title">6-Wallet Panel</h2>
-            {loading && <Spinner />}
+            <span className="db-badge db-badge-blue">v3</span>
           </div>
-          <div className="db-wallets">
-            {wallets.map((w) => (
-              <div className="db-wallet-card" key={w.address}>
-                <div className="db-wallet-top">
-                  <span className="db-wallet-label">{w.label}</span>
-                  <span className={`db-role-badge ${w.role === "issuer" ? "role-issuer" : "role-clinic"}`}>
-                    {w.role === "issuer" ? "Issuer" : "Clinic"}
-                  </span>
-                </div>
-                <a href={`${ACCT_URL}${w.address}`} target="_blank" rel="noreferrer" className="db-address">
-                  {w.address.slice(0, 12)}…{w.address.slice(-6)}
-                </a>
-                <span className="db-balance">
-                  {w.balance === null
-                    ? <Spinner />
-                    : w.balance === "—"
-                    ? <span className="db-balance-err">—</span>
-                    : `${w.balance} XRP`}
-                </span>
+
+          {error && (
+            <div className="db-error-banner">
+              ⚠ {error}
+              <button className="db-retry-btn" onClick={fetchData}>Retry</button>
+            </div>
+          )}
+
+          {/* STATS */}
+          <div className="db-stats">
+            {[
+              { label: "Total Volume",     value: usd(totalVolume) },
+              { label: "Liens Settled",    value: settledLiens.length },
+              { label: "Markets Active",   value: new Set(filteredLiens.map(r => r.market)).size },
+              { label: "Avg LienCo Split", value: `${avgSplit}%` },
+            ].map(({ label, value }) => (
+              <div className="db-stat-card" key={label}>
+                <span className="db-stat-val">{value}</span>
+                <span className="db-stat-label">{label}</span>
               </div>
             ))}
           </div>
-        </section>
 
-        {/* SETTLEMENT LEDGER */}
-        <section className="db-section">
-          <h2 className="db-section-title">Settlement Ledger</h2>
-          <div className="db-table-wrap">
-            <table className="db-table">
-              <thead>
-                <tr>
-                  <th>Lien ID</th>
-                  <th>Market</th>
-                  <th>Bill</th>
-                  <th>Split</th>
-                  <th>Date</th>
-                  <th>Flags</th>
-                  <th>Status</th>
-                  <th>TX 1</th>
-                  <th>TX 2</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {liens.map((r) => (
-                  <tr key={r.id}>
-                    <td className="db-lien-id">{r.id}</td>
-                    <td><span className="db-market-chip">{r.market}</span></td>
-                    <td>{usd(r.bill)}</td>
-                    <td>{r.split}% / {100 - r.split}%</td>
-                    <td className="db-muted">{fmtDate(r.ts)}</td>
-                    <td className="db-flags-cell">
-                      {r.flags.length ? r.flags.map(f => <FlagBadge key={f} flag={f} />) : <span className="db-muted">—</span>}
-                    </td>
-                    <td>
-                      {r.status === "Active"
-                        ? <span className="db-status-active">🟢 Active</span>
-                        : r.status === "Draft"
-                        ? <span className="db-status-draft">📋 Draft</span>
-                        : <span className="db-status-badge">✅ Settled</span>}
-                    </td>
-                    <td>
-                      {r.tx1
-                        ? <a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a>
-                        : <span className="db-muted">—</span>}
-                    </td>
-                    <td>{r.tx2 ? <a href={EXPLORER + r.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx2)}</a> : <span className="db-muted">—</span>}</td>
-                    <td>
-                      <button
-                        className="db-preview-btn"
-                        onClick={() => { setPreviewCaseId(r.id); setActiveTab("attorney"); }}
-                      >
-                        Attorney View →
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* LIVE ACTIVITY FEED */}
-        <section className="db-section">
-          <div className="db-section-header">
-            <h2 className="db-section-title">Live On-Chain Activity</h2>
-            {loading && <Spinner />}
-          </div>
-
-          {error ? (
-            <div className="db-feed-empty">Unable to load live transactions — {error}</div>
-          ) : loading && activity.length === 0 ? (
-            <div className="db-feed-empty"><Spinner /> Fetching transactions from XRPL testnet…</div>
-          ) : activity.length === 0 ? (
-            <div className="db-feed-empty">No recent transactions found.</div>
-          ) : (
-            <div className="db-table-wrap">
-              <table className="db-table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th>Wallet</th>
-                    <th>Result</th>
-                    <th>TX Hash</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activity.map((tx) => {
-                    const walletLabel = WALLETS.find(w => w.address === tx.account || w.address === tx.destination)?.label ?? tx.sourceWallet ?? "—";
-                    const fromLabel   = WALLETS.find(w => w.address === tx.account)?.label ?? shortH(tx.account);
-                    const toLabel     = tx.destination ? (WALLETS.find(w => w.address === tx.destination)?.label ?? shortH(tx.destination)) : "—";
-                    const amtStr      = tx.amountXrp ? `${tx.amountXrp} XRP` : tx.currency ?? "—";
-                    return (
-                      <tr key={tx.hash}>
-                        <td className="db-muted" style={{ whiteSpace: "nowrap" }}>{fmtTime(tx.date)}</td>
-                        <td><span className="db-type-chip">{tx.type}</span></td>
-                        <td className="db-amount">{amtStr}</td>
-                        <td className="db-muted">{fromLabel}</td>
-                        <td className="db-muted">{toLabel}</td>
-                        <td><span className="db-market-chip" style={{ fontSize: "0.7rem" }}>{walletLabel}</span></td>
-                        <td>
-                          <span className={tx.result === "tesSUCCESS" ? "db-status-badge" : "db-status-fail"}>
-                            {tx.result === "tesSUCCESS" ? "✅" : "❌"} {tx.result === "tesSUCCESS" ? "Success" : tx.result}
-                          </span>
-                        </td>
-                        <td>
-                          <a href={EXPLORER + tx.hash} target="_blank" rel="noreferrer" className="db-tx-link">
-                            {shortH(tx.hash)}
-                          </a>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {/* WALLET PANEL — always full 6-wallet panel regardless of market filter */}
+          <section className="db-section">
+            <div className="db-section-header">
+              <h2 className="db-section-title">6-Wallet Panel</h2>
+              {loading && <Spinner />}
             </div>
-          )}
-        </section>
-
-        {/* MARKET BREAKDOWN */}
-        <section className="db-section">
-          <h2 className="db-section-title">Market Breakdown</h2>
-          <div className="db-market-grid">
-            {liens.map((r) => {
-              const lienCoAmt = Math.floor(r.bill * r.split / 100);
-              const clinicAmt = r.bill - lienCoAmt;
-              return (
-                <div className="db-market-card" key={r.id}>
-                  <div className="db-market-header">
-                    <span className="db-market-chip">{r.market}</span>
-                    <span className="db-muted">{r.clinic}</span>
-                    {r.flags.map(f => <FlagBadge key={f} flag={f} />)}
+            <div className="db-wallets">
+              {wallets.map((w) => (
+                <div className="db-wallet-card" key={w.address}>
+                  <div className="db-wallet-top">
+                    <span className="db-wallet-label">{w.label}</span>
+                    <span className={`db-role-badge ${w.role === "issuer" ? "role-issuer" : "role-clinic"}`}>
+                      {w.role === "issuer" ? "Issuer" : "Clinic"}
+                    </span>
                   </div>
-                  <div className="db-market-bill">{usd(r.bill)}</div>
-                  <div className="db-split-bar">
-                    <div className="db-split-lienco" style={{ width: `${r.split}%` }}>{r.split}%</div>
-                    <div className="db-split-clinic"  style={{ width: `${100 - r.split}%` }}>{100 - r.split}%</div>
-                  </div>
-                  <div className="db-market-splits">
-                    <span>LienCo: <strong>{usd(lienCoAmt)}</strong></span>
-                    <span>{r.clinic}: <strong>{usd(clinicAmt)}</strong></span>
-                  </div>
-                  <div className="db-market-date db-muted">{fmtDate(r.ts)}</div>
+                  <a href={`${ACCT_URL}${w.address}`} target="_blank" rel="noreferrer" className="db-address">
+                    {w.address.slice(0, 12)}…{w.address.slice(-6)}
+                  </a>
+                  <span className="db-balance">
+                    {w.balance === null
+                      ? <Spinner />
+                      : w.balance === "—"
+                      ? <span className="db-balance-err">—</span>
+                      : `${w.balance} XRP`}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
 
-        {/* end dashboard tab */}
+          {/* LIVE ACTIVITY FEED */}
+          <section className="db-section">
+            <div className="db-section-header">
+              <h2 className="db-section-title">Live On-Chain Activity</h2>
+              {loading && <Spinner />}
+            </div>
+
+            {error ? (
+              <div className="db-feed-empty">Unable to load live transactions — {error}</div>
+            ) : loading && activity.length === 0 ? (
+              <div className="db-feed-empty"><Spinner /> Fetching transactions from XRPL testnet…</div>
+            ) : activity.length === 0 ? (
+              <div className="db-feed-empty">No recent transactions found.</div>
+            ) : (
+              <div className="db-table-wrap">
+                <table className="db-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th>Wallet</th>
+                      <th>Result</th>
+                      <th>TX Hash</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activity.map((tx) => {
+                      const walletLabel = WALLETS.find(w => w.address === tx.account || w.address === tx.destination)?.label ?? tx.sourceWallet ?? "—";
+                      const fromLabel   = WALLETS.find(w => w.address === tx.account)?.label ?? shortH(tx.account);
+                      const toLabel     = tx.destination ? (WALLETS.find(w => w.address === tx.destination)?.label ?? shortH(tx.destination)) : "—";
+                      const amtStr      = tx.amountXrp ? `${tx.amountXrp} XRP` : tx.currency ?? "—";
+                      return (
+                        <tr key={tx.hash}>
+                          <td className="db-muted" style={{ whiteSpace: "nowrap" }}>{fmtTime(tx.date)}</td>
+                          <td><span className="db-type-chip">{tx.type}</span></td>
+                          <td className="db-amount">{amtStr}</td>
+                          <td className="db-muted">{fromLabel}</td>
+                          <td className="db-muted">{toLabel}</td>
+                          <td><span className="db-market-chip" style={{ fontSize: "0.7rem" }}>{walletLabel}</span></td>
+                          <td>
+                            <span className={tx.result === "tesSUCCESS" ? "db-status-badge" : "db-status-fail"}>
+                              {tx.result === "tesSUCCESS" ? "✅" : "❌"} {tx.result === "tesSUCCESS" ? "Success" : tx.result}
+                            </span>
+                          </td>
+                          <td>
+                            <a href={EXPLORER + tx.hash} target="_blank" rel="noreferrer" className="db-tx-link">
+                              {shortH(tx.hash)}
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </>}
 
+        {/* LIENS TAB — full ledger + market breakdown */}
+        {activeTab === "liens" && <>
+          <div className="db-header">
+            <div>
+              <h1 className="db-title">Liens{marketLabel}</h1>
+              <p className="db-sub">All liens issued on XRPL testnet — operator view</p>
+            </div>
+          </div>
+
+          <section className="db-section">
+            <h2 className="db-section-title">Settlement Ledger</h2>
+            <LienTable
+              rows={filteredLiens}
+              emptyText={market === "All" ? "No liens yet." : `No liens in ${market}.`}
+              onPreview={handlePreview}
+            />
+          </section>
+
+          <section className="db-section">
+            <h2 className="db-section-title">Market Breakdown</h2>
+            {filteredLiens.length === 0 ? (
+              <div className="db-feed-empty">
+                {market === "All" ? "No market data yet." : `No liens in ${market}.`}
+              </div>
+            ) : (
+              <div className="db-market-grid">
+                {filteredLiens.map((r) => {
+                  const lienCoAmt = Math.floor(r.bill * r.split / 100);
+                  const clinicAmt = r.bill - lienCoAmt;
+                  return (
+                    <div className="db-market-card" key={r.id}>
+                      <div className="db-market-header">
+                        <span className="db-market-chip">{r.market}</span>
+                        <span className="db-muted">{r.clinic}</span>
+                        {r.flags.map(f => <FlagBadge key={f} flag={f} />)}
+                      </div>
+                      <div className="db-market-bill">{usd(r.bill)}</div>
+                      <div className="db-split-bar">
+                        <div className="db-split-lienco" style={{ width: `${r.split}%` }}>{r.split}%</div>
+                        <div className="db-split-clinic"  style={{ width: `${100 - r.split}%` }}>{100 - r.split}%</div>
+                      </div>
+                      <div className="db-market-splits">
+                        <span>LienCo: <strong>{usd(lienCoAmt)}</strong></span>
+                        <span>{r.clinic}: <strong>{usd(clinicAmt)}</strong></span>
+                      </div>
+                      <div className="db-market-date db-muted">{fmtDate(r.ts)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </>}
+
+        {/* SETTLEMENTS TAB — settled-only subset */}
+        {activeTab === "settlements" && <>
+          <div className="db-header">
+            <div>
+              <h1 className="db-title">Settlements{marketLabel}</h1>
+              <p className="db-sub">Completed on-chain settlements · {settledLiens.length} record{settledLiens.length === 1 ? "" : "s"}</p>
+            </div>
+          </div>
+
+          <section className="db-section">
+            <LienTable
+              rows={settledLiens}
+              emptyText={market === "All" ? "No settled liens yet." : `No settled liens in ${market}.`}
+              onPreview={handlePreview}
+            />
+          </section>
+        </>}
+
+        {/* COMPLIANCE TAB — state-level rules + flagged liens */}
+        {activeTab === "compliance" && <>
+          <div className="db-header">
+            <div>
+              <h1 className="db-title">Compliance{marketLabel}</h1>
+              <p className="db-sub">State-level rules and flagged liens</p>
+            </div>
+          </div>
+
+          {/* Active flag alerts — surfaced here, not on Dashboard */}
+          <div className="db-flags-row">
+            {filteredLiens.some(r => r.flags.includes("tx-72h")) && (
+              <div className="db-flag-alert flag-alert-orange">
+                <strong>⚠ TX 72-Hour Flag</strong>
+                <span>
+                  {filteredLiens.filter(r => r.flags.includes("tx-72h")).map(r => r.id).join(", ")}
+                  {" "}within the 72-hour rescission window. Monitor for reversal requests before secondary transfer.
+                </span>
+              </div>
+            )}
+            {filteredLiens.some(r => r.flags.includes("in-nonassignable")) && (
+              <div className="db-flag-alert flag-alert-red">
+                <strong>⛔ IN Non-Assignable Warning</strong>
+                <span>
+                  Indiana statute limits lien assignability in PI cases. Confirm assignment validity for
+                  {" "}{filteredLiens.filter(r => r.flags.includes("in-nonassignable")).map(r => r.id).join(", ")}
+                  {" "}before secondary transfer.
+                </span>
+              </div>
+            )}
+          </div>
+
+          <section className="db-section">
+            <h2 className="db-section-title">State Rules</h2>
+            <div className="db-market-grid">
+              {(market === "All" ? Object.keys(MARKET_INFO) : [market])
+                .filter(code => MARKET_INFO[code])
+                .map(code => (
+                  <ComplianceStateCard
+                    key={code}
+                    code={code}
+                    info={MARKET_INFO[code]}
+                    liens={liens}
+                  />
+                ))}
+            </div>
+          </section>
+        </>}
+
+        {/* end tabs */}
       </div>
 
       {showIntake && (

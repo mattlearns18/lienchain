@@ -148,6 +148,21 @@
 .db-tab:hover { color: var(--text); }
 .db-tab-active { color: var(--accent); border-bottom-color: var(--accent); }
 
+/* Market filter (segmented control, below tab bar) */
+.db-mkt-row { padding: 14px 24px 0; }
+.db-mkt-filter { display: inline-flex; flex-wrap: wrap; gap: 6px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+.db-mkt-chip {
+  background: transparent; border: none; color: var(--muted);
+  padding: 6px 14px; border-radius: 7px; font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.db-mkt-chip:hover { color: var(--text); }
+.db-mkt-chip-active { background: var(--accent); color: #fff; }
+
+/* Compliance state card extras */
+.db-compliance-notes { font-size: 0.88rem; color: var(--text); line-height: 1.5; }
+.db-compliance-count { font-size: 0.78rem; }
+
 /* Attorney View preview button in table */
 .db-preview-btn {
   background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
