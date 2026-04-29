@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
+import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase } from "./lib/store.js";
 import IntakeWizard from "./components/IntakeWizard.jsx";
 import AttorneyPreview from "./components/AttorneyPreview.jsx";
 import "./Dashboard.css";
@@ -172,6 +173,9 @@ function ComplianceStateCard({ code, info, liens }) {
   );
 }
 
+// Seed IDs — used by the store to distinguish historical liens from user-created ones
+const SEED_IDS = new Set(SETTLEMENTS.map(l => l.id));
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [wallets,       setWallets]       = useState(WALLETS.map(w => ({ ...w, balance: null })));
@@ -179,7 +183,10 @@ export default function Dashboard() {
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState(null);
   const [lastFetch,     setLastFetch]     = useState(null);
-  const [liens,         setLiens]         = useState(SETTLEMENTS);
+  // Load liens from localStorage, merging with the hardcoded seed settlements.
+  // normalizeLien() is applied inside loadLiens() so all liens have caseId.
+  const [liens,         setLiens]         = useState(() => loadLiens(SETTLEMENTS));
+  const [cases,         setCases]         = useState(() => loadCases());
   const [showIntake,    setShowIntake]    = useState(false);
   const [activeTab,     setActiveTab]     = useState("dashboard");
   const [previewCaseId, setPreviewCaseId] = useState(null);
@@ -536,7 +543,17 @@ export default function Dashboard() {
         <IntakeWizard
           onClose={() => setShowIntake(false)}
           onComplete={(lien) => {
-            setLiens(prev => [lien, ...prev]);
+            // lien already has caseId = lien.id (set in IntakeWizard.buildLienRecord)
+            const updatedLiens = [lien, ...liens];
+            setLiens(updatedLiens);
+            saveLiens(updatedLiens, SEED_IDS);
+
+            // Create (or update) the single-clinic Case wrapper for this lien
+            const newCase = createCaseForLien(lien);
+            const updatedCases = upsertCase(cases, newCase);
+            setCases(updatedCases);
+            saveCases(updatedCases);
+
             setShowIntake(false);
           }}
         />

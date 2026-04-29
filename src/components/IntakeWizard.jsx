@@ -101,8 +101,16 @@ export default function IntakeWizard({ onClose, onComplete }) {
     if (market === "TX") flags.push("tx-72h");
     if (market === "IN") flags.push("in-nonassignable");
     return {
-      id: caseId, market, clinic: clinicName, bill: billNum,
+      id: caseId,
+      // Phase 5: caseId links this lien to its parent Case. For single-clinic
+      // cases (all Commit 1 wizards), caseId = lien.id. Commit 2 will let
+      // the user pick an existing case, at which point caseId differs from id.
+      caseId: caseId,
+      market, clinic: clinicName, bill: billNum,
       split: lienCoShare, ts: new Date().toISOString(),
+      attorney: attorneyFirm,
+      treatmentMonth: treatMonth,
+      treatmentYear: treatYear,
       tx1: txHash, tx2: null, flags, status,
     };
   }
