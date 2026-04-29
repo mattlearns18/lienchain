@@ -35,9 +35,9 @@ const MARKET_INFO = {
   IN:  { state: "Indiana",  statute: "Ind. Code §34-51-1",                warnings: ["⛔ Non-assignability risk: Indiana PI liens may be non-assignable. Confirm assignment validity before issuing."] },
 };
 
-const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const YEARS  = [2024, 2025, 2026];
-const STEPS  = ["Clinic & Market", "Case Details", "Split Config", "Review & Tokenize"];
+const MONTHS   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const YEARS    = [2024, 2025, 2026];
+const STEPS    = ["Clinic & Market", "Case Details", "Split Config", "Review & Tokenize"];
 const SUB_STEPS = ["Preparing transaction", "Connecting to XRPL testnet", "Issuing MPT token", "Confirming on ledger"];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,7 +53,17 @@ function mockTxHash() {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function IntakeWizard({ onClose, onComplete }) {
+/**
+ * @param {object}   props
+ * @param {Function} props.onClose
+ * @param {Function} props.onComplete  Called with the finished ClinicLien object
+ * @param {object[]} props.cases       Open cases from the store (for "add clinic" dropdown)
+ */
+export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
+  // "new" = create new case; "add" = add clinic to existing case
+  const [mode,            setMode]           = useState("new");
+  const [selectedCaseId,  setSelectedCaseId] = useState("");
+
   const [step, setStep] = useState(0);
 
   // Step 1
@@ -61,13 +71,15 @@ export default function IntakeWizard({ onClose, onComplete }) {
   const [clinicOther, setClinicOther] = useState("");
   const [market,      setMarket]      = useState("");
 
-  // Step 2
-  const [caseId,      setCaseId]      = useState("");
-  const [billAmount,  setBillAmount]  = useState("");
-  const [treatMonth,  setTreatMonth]  = useState("");
-  const [treatYear,   setTreatYear]   = useState("2025");
-  const [attorneyFirm,setAttorneyFirm]= useState("");
-  const [attorneyBar, setAttorneyBar] = useState("");
+  // Step 2 — lienId is always a unique ID for this specific clinic lien.
+  // In "new" mode it also serves as the caseId.
+  // In "add" mode the parent case's caseId is used instead.
+  const [lienId,       setLienId]       = useState("");
+  const [billAmount,   setBillAmount]   = useState("");
+  const [treatMonth,   setTreatMonth]   = useState("");
+  const [treatYear,    setTreatYear]    = useState("2025");
+  const [attorneyFirm, setAttorneyFirm] = useState("");
+  const [attorneyBar,  setAttorneyBar]  = useState("");
 
   // Step 3
   const [lienCoShare,   setLienCoShare]   = useState(70);
@@ -75,14 +87,17 @@ export default function IntakeWizard({ onClose, onComplete }) {
   const [purchasePrice, setPurchasePrice] = useState("");
 
   // Submission
-  const [submitting,   setSubmitting]  = useState(false);
-  const [submitStep,   setSubmitStep]  = useState(-1);
-  const [txHash,       setTxHash]      = useState("");
-  const [explorerUrl,  setExplorerUrl] = useState("");
-  const [done,         setDone]        = useState(false);
-  const [submitError,  setSubmitError] = useState("");
+  const [submitting,  setSubmitting]  = useState(false);
+  const [submitStep,  setSubmitStep]  = useState(-1);
+  const [txHash,      setTxHash]      = useState("");
+  const [explorerUrl, setExplorerUrl] = useState("");
+  const [done,        setDone]        = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  // Derived
+  // ── Derived ──
+  const openCases   = cases.filter(c => c.status !== "Settled");
+  const parentCase  = openCases.find(c => c.caseId === selectedCaseId) ?? null;
+
   const clinicName  = clinic === "Other" ? clinicOther : clinic;
   const clinicShare = 100 - lienCoShare;
   const billNum     = parseFloat(billAmount) || 0;
@@ -92,35 +107,80 @@ export default function IntakeWizard({ onClose, onComplete }) {
   const clinicAmt   = billNum - lienCoAmt;
   const marketInfo  = market ? MARKET_INFO[market] : null;
 
-  // Validation
-  const step1Valid = clinic && (clinic !== "Other" || clinicOther.trim()) && market;
-  const step2Valid = caseId.trim() && billNum > 0 && treatMonth && attorneyFirm.trim();
+  // Effective case-level values (inherited from parent in "add" mode)
+  const effectiveAttorney   = mode === "add" ? (parentCase?.attorney ?? "")         : attorneyFirm;
+  const effectiveTreatMonth = mode === "add" ? (parentCase?.treatmentMonth ?? "")   : treatMonth;
+  const effectiveTreatYear  = mode === "add" ? (parentCase?.treatmentYear  ?? "")   : treatYear;
+  const effectiveCaseId     = mode === "add" ? selectedCaseId                       : lienId;
 
-  function buildLienRecord(txHash, status) {
+  // ── Validation ──
+  const step1Valid = mode === "new"
+    ? (clinic && (clinic !== "Other" || clinicOther.trim()) && market)
+    : (selectedCaseId && clinic && (clinic !== "Other" || clinicOther.trim()) && market);
+
+  const step2Valid = mode === "add"
+    ? (lienId.trim() && billNum > 0)   // treatMonth + attorney inherited from case
+    : (lienId.trim() && billNum > 0 && treatMonth && attorneyFirm.trim());
+
+  // ── Build record ──
+  function buildLienRecord(hash, status) {
     const flags = [];
     if (market === "TX") flags.push("tx-72h");
     if (market === "IN") flags.push("in-nonassignable");
     return {
-      id: caseId,
-      // Phase 5: caseId links this lien to its parent Case. For single-clinic
-      // cases (all Commit 1 wizards), caseId = lien.id. Commit 2 will let
-      // the user pick an existing case, at which point caseId differs from id.
-      caseId: caseId,
-      market, clinic: clinicName, bill: billNum,
-      split: lienCoShare, ts: new Date().toISOString(),
-      attorney: attorneyFirm,
-      treatmentMonth: treatMonth,
-      treatmentYear: treatYear,
-      tx1: txHash, tx2: null, flags, status,
+      id:             lienId,
+      // Phase 5: caseId links to parent Case.
+      // "new" mode → caseId = lienId (single-clinic case, they match).
+      // "add" mode → caseId = selectedCaseId (the pre-existing case).
+      caseId:         effectiveCaseId,
+      market,
+      clinic:         clinicName,
+      bill:           billNum,
+      split:          lienCoShare,
+      ts:             new Date().toISOString(),
+      attorney:       effectiveAttorney,
+      treatmentMonth: effectiveTreatMonth,
+      treatmentYear:  effectiveTreatYear,
+      tx1:            hash,
+      tx2:            null,
+      flags,
+      status,
     };
   }
 
+  // ── Reset to "add another clinic" state ──
+  function handleAddAnother() {
+    // Keep mode=add and selectedCaseId — go back to step 1 so the user picks
+    // a different clinic + market for the same case, then mints another lien.
+    setMode("add");
+    // selectedCaseId stays as-is (the case we just added to)
+    setStep(0);
+    setClinic("");
+    setClinicOther("");
+    setMarket("");
+    setLienId("");
+    setBillAmount("");
+    setTreatMonth("");
+    setTreatYear("2025");
+    setAttorneyFirm("");
+    setAttorneyBar("");
+    setLienCoShare(70);
+    setReductionNote("");
+    setPurchasePrice("");
+    setSubmitting(false);
+    setSubmitStep(-1);
+    setTxHash("");
+    setExplorerUrl("");
+    setDone(false);
+    setSubmitError("");
+  }
+
+  // ── Submit ──
   async function handleSubmit() {
     setSubmitting(true);
     setSubmitError("");
 
     if (DEMO_MODE) {
-      // ── Simulated tokenization ────────────────────────────────────────
       const delays = [900, 1000, 1200, 900];
       for (let i = 0; i < SUB_STEPS.length; i++) {
         setSubmitStep(i);
@@ -135,35 +195,35 @@ export default function IntakeWizard({ onClose, onComplete }) {
       return;
     }
 
-    // ── Real XRPL tokenization ────────────────────────────────────────
-    setSubmitStep(0); // Preparing transaction
+    setSubmitStep(0);
     await new Promise(r => setTimeout(r, 500));
-
-    setSubmitStep(1); // Connecting to XRPL testnet
+    setSubmitStep(1);
 
     const payload = {
-      id: caseId, bill: billNum, split: lienCoShare,
-      clinic: clinicName, market,
-      attorney: attorneyFirm,
+      id:           lienId,
+      caseId:       effectiveCaseId,
+      bill:         billNum,
+      split:        lienCoShare,
+      clinic:       clinicName,
+      market,
+      attorney:     effectiveAttorney,
       purchasePrice: purchaseNum,
       reductionNote,
     };
 
-    // Advance to step 2 after 3 s; XRPL call runs in parallel
     const [result] = await Promise.all([
       issueLienMPT(payload),
       new Promise(r => setTimeout(r, 3000)).then(() => setSubmitStep(2)),
     ]);
 
     if (result.success) {
-      setSubmitStep(3); // Confirming on ledger
+      setSubmitStep(3);
       await new Promise(r => setTimeout(r, 500));
       setTxHash(result.txHash);
       setExplorerUrl(result.explorerUrl);
       setDone(true);
       onComplete(buildLienRecord(result.txHash, "Active"));
     } else {
-      // Show error — user can Try Again or Save as Draft
       setSubmitError(result.error);
       setSubmitting(false);
     }
@@ -174,15 +234,33 @@ export default function IntakeWizard({ onClose, onComplete }) {
     onClose();
   }
 
+  // ── Mode option card (for Step 1 toggle) ──
+  function ModeCard({ id, title, sub, icon }) {
+    return (
+      <label
+        className={`wiz-mode-card ${mode === id ? "wiz-mode-card-active" : ""}`}
+        onClick={() => { setMode(id); setSelectedCaseId(""); }}
+      >
+        <div className="wiz-mode-icon">{icon}</div>
+        <div>
+          <div className="wiz-mode-title">{title}</div>
+          <div className="wiz-mode-sub">{sub}</div>
+        </div>
+      </label>
+    );
+  }
+
   return (
     <div className="wiz-overlay" onClick={onClose}>
       <div className="wiz-modal" onClick={e => e.stopPropagation()}>
 
-        {/* Sticky top — header + step indicator never scroll away */}
+        {/* Sticky top */}
         <div className="wiz-sticky-top">
           <div className="wiz-header">
             <div>
-              <h2 className="wiz-title">Create New Lien</h2>
+              <h2 className="wiz-title">
+                {mode === "add" ? "Add Clinic to Case" : "Create New Lien"}
+              </h2>
               <p className="wiz-sub">
                 {done
                   ? DEMO_MODE ? "Lien tokenized (simulated)" : "Lien tokenized on XRPL Testnet"
@@ -211,6 +289,65 @@ export default function IntakeWizard({ onClose, onComplete }) {
         {/* ── STEP 1 — Clinic & Market ── */}
         {step === 0 && !submitting && (
           <div className="wiz-body">
+
+            {/* Mode toggle — new case vs add to existing */}
+            <div className="wiz-field">
+              <label className="wiz-label">Case Type</label>
+              <div className="wiz-mode-cards">
+                <ModeCard
+                  id="new"
+                  icon="＋"
+                  title="New case"
+                  sub="Create a case with this as the first clinic lien"
+                />
+                <ModeCard
+                  id="add"
+                  icon="⊕"
+                  title="Add clinic to existing case"
+                  sub={openCases.length ? `${openCases.length} open case${openCases.length === 1 ? "" : "s"} available` : "No open cases yet"}
+                />
+              </div>
+            </div>
+
+            {/* Existing case selector */}
+            {mode === "add" && (
+              <div className="wiz-field">
+                <label className="wiz-label">Existing Case</label>
+                {openCases.length === 0 ? (
+                  <div className="wiz-market-warn warn-orange">
+                    No open cases yet — mint a first lien to create a case, then come back to add a second clinic.
+                  </div>
+                ) : (
+                  <select
+                    className="wiz-select"
+                    value={selectedCaseId}
+                    onChange={e => setSelectedCaseId(e.target.value)}
+                  >
+                    <option value="">Select a case…</option>
+                    {openCases.map(c => (
+                      <option key={c.caseId} value={c.caseId}>
+                        {c.caseId}
+                        {c.attorney ? ` — ${c.attorney}` : ""}
+                        {` — ${c.clinicLienIds.length} clinic${c.clinicLienIds.length === 1 ? "" : "s"}`}
+                        {c.treatmentMonth ? ` — ${c.treatmentMonth} ${c.treatmentYear}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {parentCase && (
+                  <div className="wiz-market-banner" style={{ marginTop: 4 }}>
+                    <span className="wiz-statute">
+                      Attorney: {parentCase.attorney || "—"} · Treatment: {parentCase.treatmentMonth} {parentCase.treatmentYear}
+                    </span>
+                    <span className="wiz-statute" style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
+                      These fields are inherited from the case and will not be re-entered.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Clinic */}
             <div className="wiz-field">
               <label className="wiz-label">Clinic</label>
               <select className="wiz-select" value={clinic} onChange={e => setClinic(e.target.value)}>
@@ -226,6 +363,7 @@ export default function IntakeWizard({ onClose, onComplete }) {
               </div>
             )}
 
+            {/* Market */}
             <div className="wiz-field">
               <label className="wiz-label">Market</label>
               <select className="wiz-select" value={market} onChange={e => setMarket(e.target.value)}>
@@ -249,12 +387,45 @@ export default function IntakeWizard({ onClose, onComplete }) {
         {/* ── STEP 2 — Case Details ── */}
         {step === 1 && !submitting && (
           <div className="wiz-body">
-            <div className="wiz-field">
-              <label className="wiz-label">Case ID</label>
-              <div className="wiz-row-inline">
-                <input className="wiz-input" value={caseId} onChange={e => setCaseId(e.target.value)} placeholder="e.g. PI-LIEN-KC-002" />
-                <button className="wiz-gen-btn" onClick={() => setCaseId(genCaseId())}>Generate ID</button>
+
+            {/* In "add" mode show inherited case context as read-only */}
+            {mode === "add" && parentCase && (
+              <div className="wiz-preview-card">
+                <div className="wiz-preview-title">Inherited from case {parentCase.caseId}</div>
+                <div className="wiz-preview-row">
+                  <span>Attorney</span>
+                  <strong>{parentCase.attorney || "—"}</strong>
+                </div>
+                <div className="wiz-preview-row">
+                  <span>Treatment</span>
+                  <strong>{parentCase.treatmentMonth} {parentCase.treatmentYear}</strong>
+                </div>
+                <div className="wiz-preview-row">
+                  <span>Existing clinics</span>
+                  <strong>{parentCase.clinicLienIds.length}</strong>
+                </div>
               </div>
+            )}
+
+            {/* Unique lien ID — always needed */}
+            <div className="wiz-field">
+              <label className="wiz-label">
+                {mode === "add" ? "Clinic Lien ID" : "Case ID"}
+              </label>
+              <div className="wiz-row-inline">
+                <input
+                  className="wiz-input"
+                  value={lienId}
+                  onChange={e => setLienId(e.target.value)}
+                  placeholder={mode === "add" ? "e.g. PI-LIEN-STL-002" : "e.g. PI-LIEN-KC-001"}
+                />
+                <button className="wiz-gen-btn" onClick={() => setLienId(genCaseId())}>Generate ID</button>
+              </div>
+              {mode === "add" && (
+                <span style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: 2, display: "block" }}>
+                  Unique ID for this clinic's lien — separate from the case ID above.
+                </span>
+              )}
             </div>
 
             <div className="wiz-field">
@@ -262,28 +433,31 @@ export default function IntakeWizard({ onClose, onComplete }) {
               <input className="wiz-input" type="number" min="0" value={billAmount} onChange={e => setBillAmount(e.target.value)} placeholder="e.g. 12500" />
             </div>
 
-            <div className="wiz-field">
-              <label className="wiz-label">Treatment Month</label>
-              <div className="wiz-row-inline">
-                <select className="wiz-select" value={treatMonth} onChange={e => setTreatMonth(e.target.value)}>
-                  <option value="">Month…</option>
-                  {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <select className="wiz-select" style={{ maxWidth: 100 }} value={treatYear} onChange={e => setTreatYear(e.target.value)}>
-                  {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+            {/* Case-level fields — only shown for new cases */}
+            {mode === "new" && (<>
+              <div className="wiz-field">
+                <label className="wiz-label">Treatment Month</label>
+                <div className="wiz-row-inline">
+                  <select className="wiz-select" value={treatMonth} onChange={e => setTreatMonth(e.target.value)}>
+                    <option value="">Month…</option>
+                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <select className="wiz-select" style={{ maxWidth: 100 }} value={treatYear} onChange={e => setTreatYear(e.target.value)}>
+                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
 
-            <div className="wiz-field">
-              <label className="wiz-label">Attorney Firm</label>
-              <input className="wiz-input" value={attorneyFirm} onChange={e => setAttorneyFirm(e.target.value)} placeholder="e.g. Smith & Associates" />
-            </div>
+              <div className="wiz-field">
+                <label className="wiz-label">Attorney Firm</label>
+                <input className="wiz-input" value={attorneyFirm} onChange={e => setAttorneyFirm(e.target.value)} placeholder="e.g. Smith & Associates" />
+              </div>
 
-            <div className="wiz-field">
-              <label className="wiz-label">Attorney Bar Number <span className="wiz-optional">(optional)</span></label>
-              <input className="wiz-input" value={attorneyBar} onChange={e => setAttorneyBar(e.target.value)} placeholder="e.g. MO Bar #54321" />
-            </div>
+              <div className="wiz-field">
+                <label className="wiz-label">Attorney Bar Number <span className="wiz-optional">(optional)</span></label>
+                <input className="wiz-input" value={attorneyBar} onChange={e => setAttorneyBar(e.target.value)} placeholder="e.g. MO Bar #54321" />
+              </div>
+            </>)}
 
           </div>
         )}
@@ -300,7 +474,6 @@ export default function IntakeWizard({ onClose, onComplete }) {
             {market === "IN" && lienCoShare > 80 && (
               <div className="wiz-market-warn warn-red">⛔ Indiana 20% floor applies — clinic must receive at least 20%.</div>
             )}
-
             {(lienCoShare < 30 || lienCoShare > 85) && (
               <div className="wiz-market-warn warn-orange">⚠ Unusual split ratio — please confirm reduction note fully documents the negotiation.</div>
             )}
@@ -356,11 +529,23 @@ export default function IntakeWizard({ onClose, onComplete }) {
               </div>
               <div className="wiz-review-group">
                 <div className="wiz-review-heading">Case Details</div>
-                <div className="wiz-review-row"><span>Case ID</span><strong>{caseId}</strong></div>
+                <div className="wiz-review-row">
+                  <span>Case ID</span><strong>{effectiveCaseId}</strong>
+                </div>
+                <div className="wiz-review-row">
+                  <span>Clinic Lien ID</span><strong>{lienId}</strong>
+                </div>
                 <div className="wiz-review-row"><span>Bill Amount</span><strong>${billNum.toLocaleString()}</strong></div>
-                <div className="wiz-review-row"><span>Treatment</span><strong>{treatMonth} {treatYear}</strong></div>
-                <div className="wiz-review-row"><span>Attorney</span><strong>{attorneyFirm}</strong></div>
-                {attorneyBar && <div className="wiz-review-row"><span>Bar #</span><strong>{attorneyBar}</strong></div>}
+                <div className="wiz-review-row">
+                  <span>Treatment</span>
+                  <strong>{effectiveTreatMonth} {effectiveTreatYear}</strong>
+                </div>
+                <div className="wiz-review-row">
+                  <span>Attorney</span><strong>{effectiveAttorney}</strong>
+                </div>
+                {attorneyBar && mode === "new" && (
+                  <div className="wiz-review-row"><span>Bar #</span><strong>{attorneyBar}</strong></div>
+                )}
               </div>
               <div className="wiz-review-group">
                 <div className="wiz-review-heading">Split Configuration</div>
@@ -374,7 +559,9 @@ export default function IntakeWizard({ onClose, onComplete }) {
             <div className="wiz-explainer">
               <div className="wiz-explainer-title">What happens when you submit</div>
               {[
-                "An MPT will be issued on XRPL testnet",
+                mode === "add"
+                  ? `An MPT will be issued on XRPL testnet, linked to case ${effectiveCaseId}`
+                  : "An MPT will be issued on XRPL testnet",
                 "The lien will appear in your portfolio",
                 "An attorney portal link will be generated",
                 "You'll get a transaction hash",
@@ -434,17 +621,16 @@ export default function IntakeWizard({ onClose, onComplete }) {
               {DEMO_MODE ? "Lien Tokenized (Simulated)" : "Lien Tokenized on XRPL Testnet"}
             </h3>
             <p className="wiz-success-sub">
-              {caseId} has been issued{DEMO_MODE ? " (simulated)" : " as an NFT record"} on XRPL testnet and added to your portfolio.
+              {lienId} has been issued{DEMO_MODE ? " (simulated)" : " as an NFT record"} on XRPL testnet
+              {mode === "add" ? ` and added to case ${effectiveCaseId}` : ""}.
             </p>
             <div className="wiz-tx-box">
-              <div className="wiz-tx-label">
-                Transaction Hash{DEMO_MODE ? " (simulated)" : ""}
-              </div>
+              <div className="wiz-tx-label">Transaction Hash{DEMO_MODE ? " (simulated)" : ""}</div>
               <code className="wiz-tx-hash">{txHash}</code>
             </div>
             <div className="wiz-attorney-link">
               <div className="wiz-tx-label">Attorney Portal Link</div>
-              <code className="wiz-tx-hash">/attorney/{encodeURIComponent(caseId)}</code>
+              <code className="wiz-tx-hash">/attorney/{encodeURIComponent(effectiveCaseId)}</code>
             </div>
             <div className="wiz-success-btns">
               <a
@@ -457,6 +643,14 @@ export default function IntakeWizard({ onClose, onComplete }) {
               </a>
               <button className="wiz-btn-primary" onClick={onClose}>Done</button>
             </div>
+            {/* "Add another clinic" CTA — always shown so user can stack clinics */}
+            <button
+              className="wiz-btn-secondary"
+              style={{ width: "100%", marginTop: 2 }}
+              onClick={handleAddAnother}
+            >
+              + Add another clinic to this case
+            </button>
           </div>
         )}
 

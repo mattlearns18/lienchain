@@ -541,20 +541,34 @@ export default function Dashboard() {
 
       {showIntake && (
         <IntakeWizard
+          cases={cases}
           onClose={() => setShowIntake(false)}
           onComplete={(lien) => {
-            // lien already has caseId = lien.id (set in IntakeWizard.buildLienRecord)
             const updatedLiens = [lien, ...liens];
             setLiens(updatedLiens);
             saveLiens(updatedLiens, SEED_IDS);
 
-            // Create (or update) the single-clinic Case wrapper for this lien
-            const newCase = createCaseForLien(lien);
-            const updatedCases = upsertCase(cases, newCase);
+            let updatedCases;
+            if (lien.caseId === lien.id) {
+              // New single-clinic case — create a fresh Case wrapper
+              updatedCases = upsertCase(cases, createCaseForLien(lien));
+            } else {
+              // Adding a clinic to an existing case — append lien.id to clinicLienIds
+              const existing = cases.find(c => c.caseId === lien.caseId);
+              if (existing) {
+                const updated = {
+                  ...existing,
+                  clinicLienIds: [...existing.clinicLienIds, lien.id],
+                };
+                updatedCases = upsertCase(cases, updated);
+              } else {
+                // Shouldn't happen, but fall back to creating a new case
+                updatedCases = upsertCase(cases, createCaseForLien(lien));
+              }
+            }
             setCases(updatedCases);
             saveCases(updatedCases);
-
-            setShowIntake(false);
+            // Note: wizard stays open (user may click "Add another clinic" or "Done")
           }}
         />
       )}
