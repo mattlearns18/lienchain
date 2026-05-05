@@ -150,10 +150,10 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
 
   // ── Reset to "add another clinic" state ──
   function handleAddAnother() {
-    // Keep mode=add and selectedCaseId — go back to step 1 so the user picks
-    // a different clinic + market for the same case, then mints another lien.
+    // Keep mode=add and pre-select the case we just minted into, so the
+    // dropdown is already set when the user returns to step 1.
     setMode("add");
-    // selectedCaseId stays as-is (the case we just added to)
+    setSelectedCaseId(effectiveCaseId);
     setStep(0);
     setClinic("");
     setClinicOther("");
