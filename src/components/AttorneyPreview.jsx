@@ -13,72 +13,107 @@ const MARKET_INFO = {
 
 const usd = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// ── Waterfall calculator ──────────────────────────────────────────────────────
-function calcWaterfall(grossNum, attyFeePct, costsNum, bill, lienCoShare) {
-  const attyFeeAmt    = Math.round(grossNum * attyFeePct / 100);
-  const netAvailable  = grossNum - attyFeeAmt - costsNum;
-  // Lien is paid its face value (bill) from net; patient keeps the rest.
-  // If net < bill the lien is partially paid; if net < 0 nothing is paid.
-  const onChainAmount = Math.min(bill, Math.max(0, netAvailable));
-  const lienCoAmt     = onChainAmount * lienCoShare / 100;
-  const clinicAmt     = onChainAmount * (100 - lienCoShare) / 100;
-  const patientNet    = netAvailable - onChainAmount;
-  return { grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable, onChainAmount, lienCoAmt, clinicAmt, patientNet };
+// ── Multi-clinic pro-rata waterfall calculator ────────────────────────────────
+// Phase 5: pro-rata only. Per-state lien priority (TX hospital lien priority,
+// IN 20% floor cascading, etc.) is a Phase 6+ refinement.
+//
+// @param {number} grossNum
+// @param {number} attyFeePct
+// @param {number} costsNum
+// @param {Array<{id,clinic,bill,split}>} clinics
+function calcMultiClinicWaterfall(grossNum, attyFeePct, costsNum, clinics) {
+  const attyFeeAmt   = Math.round(grossNum * attyFeePct / 100);
+  const netAvailable = grossNum - attyFeeAmt - costsNum;
+  const totalBills   = clinics.reduce((s, c) => s + c.bill, 0);
+
+  let clinicRows, patientNet;
+
+  if (netAvailable <= 0) {
+    clinicRows = clinics.map(c => ({ ...c, recovery: 0, lienCoAmt: 0, clinicAmt: 0 }));
+    patientNet = netAvailable;
+  } else if (netAvailable >= totalBills) {
+    // Full recovery; residual goes to patient
+    clinicRows = clinics.map(c => {
+      const recovery  = c.bill;
+      const lienCoAmt = recovery * c.split / 100;
+      const clinicAmt = recovery - lienCoAmt;
+      return { ...c, recovery, lienCoAmt, clinicAmt };
+    });
+    patientNet = netAvailable - totalBills;
+  } else {
+    // Pro-rata shortfall distribution
+    clinicRows = clinics.map(c => {
+      const recovery  = totalBills > 0 ? (c.bill / totalBills) * netAvailable : 0;
+      const lienCoAmt = recovery * c.split / 100;
+      const clinicAmt = recovery - lienCoAmt;
+      return { ...c, recovery, lienCoAmt, clinicAmt };
+    });
+    patientNet = 0; // pool fully consumed by liens
+  }
+
+  const onChainTotal = clinicRows.reduce((s, r) => s + r.recovery, 0);
+  const totalLienCo  = clinicRows.reduce((s, r) => s + r.lienCoAmt, 0);
+  const totalClinic  = clinicRows.reduce((s, r) => s + r.clinicAmt, 0);
+
+  return {
+    grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable,
+    totalBills, onChainTotal, totalLienCo, totalClinic, patientNet,
+    clinicRows,
+    // Backward-compat aliases for SettleModal / SplitVisual
+    onChainAmount: onChainTotal,
+    lienCoAmt:     totalLienCo,
+    clinicAmt:     totalClinic,
+  };
 }
 
 // ── WaterfallCard ─────────────────────────────────────────────────────────────
-function WaterfallCard({ bill, lienCoShare, onWaterfallChange }) {
-  const clinicShare    = 100 - lienCoShare;
-  const [gross,        setGross]       = useState(String(bill));
-  const [attyFeePct,   setAttyFeePct]  = useState(33);
-  const [costs,        setCosts]       = useState("");
+// clinics: Array<{id, clinic, bill, split}> — all clinics on the selected case
+function WaterfallCard({ clinics, onWaterfallChange }) {
+  const totalBills = clinics.reduce((s, c) => s + c.bill, 0);
+  const [gross,      setGross]      = useState(String(totalBills));
+  const [attyFeePct, setAttyFeePct] = useState(33);
+  const [costs,      setCosts]      = useState("");
 
-  const grossNum = parseFloat(gross)  || 0;
-  const costsNum = parseFloat(costs)  || 0;
-  const wf = calcWaterfall(grossNum, attyFeePct, costsNum, bill, lienCoShare);
+  const grossNum = parseFloat(gross) || 0;
+  const costsNum = parseFloat(costs) || 0;
+  const wf = calcMultiClinicWaterfall(grossNum, attyFeePct, costsNum, clinics);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { onWaterfallChange(wf); }, [grossNum, attyFeePct, costsNum]);
 
   const isNetNeg     = wf.netAvailable < 0;
   const isPatientNeg = wf.patientNet < 0 && !isNetNeg;
+  const isProRata    = wf.netAvailable > 0 && wf.netAvailable < wf.totalBills;
+  const isMulti      = clinics.length > 1;
 
   return (
     <div className="ap-waterfall-card">
-      <div className="ap-waterfall-title">Settlement Waterfall</div>
+      <div className="ap-waterfall-title">Settlement Waterfall{isMulti ? ` — ${clinics.length} Clinics` : ""}</div>
 
       {/* Inputs */}
       <div className="ap-wf-inputs">
         <div className="ap-wf-field">
           <label className="ap-wf-label">Gross Settlement Amount ($)</label>
-          <input
-            className="ap-wf-input" type="number" min="0"
-            value={gross} onChange={e => setGross(e.target.value)}
-          />
+          <input className="ap-wf-input" type="number" min="0"
+            value={gross} onChange={e => setGross(e.target.value)} />
         </div>
-
         <div className="ap-wf-field">
           <label className="ap-wf-label">
             Attorney Fee — <strong style={{ color: "var(--text)" }}>{attyFeePct}%</strong>
           </label>
-          <input
-            type="range" min={10} max={50} value={attyFeePct}
-            onChange={e => setAttyFeePct(Number(e.target.value))}
-            className="ap-wf-slider"
-          />
+          <input type="range" min={10} max={50} value={attyFeePct}
+            onChange={e => setAttyFeePct(Number(e.target.value))} className="ap-wf-slider" />
           <div className="ap-wf-slider-labels"><span>10%</span><span>50%</span></div>
         </div>
-
         <div className="ap-wf-field">
           <label className="ap-wf-label">Case Costs ($)</label>
-          <input
-            className="ap-wf-input" type="number" min="0"
-            value={costs} onChange={e => setCosts(e.target.value)} placeholder="0"
-          />
+          <input className="ap-wf-input" type="number" min="0"
+            value={costs} onChange={e => setCosts(e.target.value)} placeholder="0" />
           <span className="ap-wf-help">Filing fees, depositions, expert witnesses, medical records, etc.</span>
         </div>
       </div>
 
-      {/* Breakdown table */}
+      {/* Top-level breakdown */}
       <div className="ap-wf-breakdown">
         <div className="ap-wf-row">
           <span className="ap-wf-row-label">Gross Settlement</span>
@@ -100,14 +135,46 @@ function WaterfallCard({ bill, lienCoShare, onWaterfallChange }) {
           </span>
         </div>
         <div className="ap-wf-divider" />
-        <div className="ap-wf-row">
-          <span className="ap-wf-row-label ap-wf-indent ap-wf-teal">LienCo ({lienCoShare}%)</span>
-          <span className="ap-wf-row-val ap-wf-teal">{usd(wf.lienCoAmt)}</span>
+
+        {/* Per-clinic table */}
+        <div className="ap-wf-clinic-table">
+          <div className="ap-wf-clinic-grid">
+            <div className="ap-wf-clinic-hdr">
+              <span>Clinic</span>
+              <span>Bill</span>
+              <span>Recovery</span>
+              <span>LC%</span>
+              <span>LienCo $</span>
+              <span>Clinic $</span>
+            </div>
+            {wf.clinicRows.map(r => (
+              <div key={r.id} className="ap-wf-clinic-row">
+                <span className="ap-wf-clinic-name">{r.clinic}</span>
+                <span className="ap-wf-clinic-val">{usd(r.bill)}</span>
+                <span className="ap-wf-clinic-val">{usd(r.recovery)}</span>
+                <span className="ap-wf-clinic-val">{r.split}%</span>
+                <span className="ap-wf-clinic-lco">{usd(r.lienCoAmt)}</span>
+                <span className="ap-wf-clinic-cli">{usd(r.clinicAmt)}</span>
+              </div>
+            ))}
+            {isMulti && (
+              <div className="ap-wf-clinic-totals">
+                <span>Total</span>
+                <span>{usd(wf.totalBills)}</span>
+                <span>{usd(wf.onChainTotal)}</span>
+                <span></span>
+                <span className="ap-wf-clinic-lco">{usd(wf.totalLienCo)}</span>
+                <span className="ap-wf-clinic-cli">{usd(wf.totalClinic)}</span>
+              </div>
+            )}
+          </div>
+          {isProRata && (
+            <div className="ap-wf-prorata-note">
+              Pro-rata distribution applied — net pool insufficient to cover all bills in full.
+            </div>
+          )}
         </div>
-        <div className="ap-wf-row">
-          <span className="ap-wf-row-label ap-wf-indent ap-wf-green">Clinic ({clinicShare}%)</span>
-          <span className="ap-wf-row-val ap-wf-green">{usd(wf.clinicAmt)}</span>
-        </div>
+
         <div className="ap-wf-divider" />
         <div className="ap-wf-row ap-wf-total">
           <span className="ap-wf-row-label">Patient Net Recovery</span>
@@ -117,7 +184,6 @@ function WaterfallCard({ bill, lienCoShare, onWaterfallChange }) {
         </div>
       </div>
 
-      {/* Warnings */}
       {isNetNeg && (
         <div className="ap-flag-banner ap-flag-red">
           Settlement does not cover attorney fees and costs. Consider requesting lien reduction.
@@ -133,17 +199,22 @@ function WaterfallCard({ bill, lienCoShare, onWaterfallChange }) {
 }
 
 // ── SettleModal ───────────────────────────────────────────────────────────────
-function SettleModal({ onClose, lien, waterfall }) {
+function SettleModal({ onClose, lien, caseClinics, waterfall }) {
   const [phase, setPhase] = useState("confirm");
   const [step,  setStep]  = useState(0);
 
-  const lienCoShare = lien.split ?? 70;
-  const clinicShare = 100 - lienCoShare;
+  const settleAmt = waterfall?.onChainAmount ?? caseClinics.reduce((s, c) => s + c.bill, 0);
+  const lienCoAmt = waterfall?.lienCoAmt     ?? 0;
+  const clinicAmt = waterfall?.clinicAmt     ?? 0;
 
-  // On-chain: the lien face value (or whatever net can cover) gets split
-  const settleAmt = waterfall?.onChainAmount ?? lien.bill;
-  const lienCoAmt = waterfall?.lienCoAmt     ?? Math.floor(lien.bill * lienCoShare / 100);
-  const clinicAmt = waterfall?.clinicAmt     ?? (lien.bill - lienCoAmt);
+  // Effective split % derived from aggregate amounts (for display + compliance checks)
+  const effectiveLienCoPct = (lienCoAmt + clinicAmt) > 0
+    ? Math.round(lienCoAmt / (lienCoAmt + clinicAmt) * 100)
+    : (caseClinics[0]?.split ?? 70);
+
+  // Indiana compliance: flag if any IN-market clinic has lienCo split > 80%
+  const hasInViolation = lien.market === "IN" && effectiveLienCoPct > 80;
+  const hasUnusualSplit = effectiveLienCoPct < 30 || effectiveLienCoPct > 85;
 
   const steps = [
     { label: "Verifying attorney credentials",  detail: "Bar # on file" },
@@ -153,19 +224,17 @@ function SettleModal({ onClose, lien, waterfall }) {
   ];
 
   async function run() {
-    // Memo data that will be embedded in the on-chain settlement tx
     const memoData = {
-      case:               lien.id,
+      caseId:             lien.caseId ?? lien.id,
       grossSettlement:    waterfall?.grossNum,
       attorneyFeePercent: waterfall?.attyFeePct,
       attorneyFeeAmount:  waterfall?.attyFeeAmt,
       caseCosts:          waterfall?.costsNum,
       netAvailable:       waterfall?.netAvailable,
-      lienCoShare,
-      clinicShare,
       lienCoAmount:       lienCoAmt,
       clinicAmount:       clinicAmt,
       patientNetRecovery: waterfall?.patientNet,
+      clinicRows:         waterfall?.clinicRows?.map(r => ({ id: r.id, clinic: r.clinic, recovery: r.recovery, lienCoAmt: r.lienCoAmt, clinicAmt: r.clinicAmt })),
     };
     console.log("[LienChain] Settlement memo (on-chain data):", memoData);
 
@@ -185,34 +254,34 @@ function SettleModal({ onClose, lien, waterfall }) {
         {phase === "confirm" && (
           <>
             <h3 className="ap-modal-title">Confirm Settlement</h3>
-            <p className="ap-modal-sub">Settling <strong>{lien.id}</strong></p>
+            <p className="ap-modal-sub">Settling <strong>{lien.caseId ?? lien.id}</strong></p>
 
-            {/* Read-only split summary — split is fixed from the wizard */}
+            {/* Read-only split summary */}
             <div className="ap-wf-breakdown">
               <div className="ap-wf-row">
                 <span className="ap-wf-row-label">Amount settling on-chain</span>
                 <span className="ap-wf-row-val">{usd(settleAmt)}</span>
               </div>
               <div className="ap-wf-row" style={{ fontSize: "0.74rem", color: "var(--muted)" }}>
-                <span style={{ paddingLeft: 0 }}>Net of attorney fee &amp; case costs</span>
+                <span>Net of attorney fee &amp; case costs</span>
               </div>
               <div className="ap-wf-divider" />
               <div className="ap-wf-row">
-                <span className="ap-wf-row-label ap-wf-indent ap-wf-teal">LienCo ({lienCoShare}%)</span>
+                <span className="ap-wf-row-label ap-wf-indent ap-wf-teal">To LienCo</span>
                 <span className="ap-wf-row-val ap-wf-teal">{usd(lienCoAmt)}</span>
               </div>
               <div className="ap-wf-row">
-                <span className="ap-wf-row-label ap-wf-indent ap-wf-green">Clinic ({clinicShare}%)</span>
+                <span className="ap-wf-row-label ap-wf-indent ap-wf-green">To Clinic(s)</span>
                 <span className="ap-wf-row-val ap-wf-green">{usd(clinicAmt)}</span>
               </div>
             </div>
 
-            {lien.market === "IN" && lienCoShare > 80 && (
+            {hasInViolation && (
               <div className="ap-flag-banner ap-flag-red">
                 ⛔ Indiana 20% floor applies — clinic must receive at least 20%.
               </div>
             )}
-            {(lienCoShare < 30 || lienCoShare > 85) && (
+            {hasUnusualSplit && (
               <div className="ap-flag-banner ap-flag-orange">
                 ⚠ Unusual split ratio — please confirm reduction note fully documents the negotiation.
               </div>
@@ -265,24 +334,25 @@ function SettleModal({ onClose, lien, waterfall }) {
 }
 
 // ── SplitVisual ───────────────────────────────────────────────────────────────
-function SplitVisual({ lienCoShare, amount }) {
-  const clinicShare = 100 - lienCoShare;
-  const lienCoAmt   = Math.floor(amount * lienCoShare / 100);
-  const clinicAmt   = amount - lienCoAmt;
+// Accepts aggregate dollar amounts from the waterfall (works for single or multi-clinic)
+function SplitVisual({ lienCoAmt, clinicAmt }) {
+  const total      = lienCoAmt + clinicAmt;
+  const lienCoPct  = total > 0 ? Math.round(lienCoAmt / total * 100) : 70;
+  const clinicPct  = 100 - lienCoPct;
   return (
     <div className="ap-split-card">
       <div className="ap-split-label">On-Chain Split (net settlement amount)</div>
       <div className="ap-split-bar">
-        <div className="ap-seg ap-seg-lienco" style={{ width: `${lienCoShare}%` }}>{lienCoShare}%</div>
-        <div className="ap-seg ap-seg-clinic"  style={{ width: `${clinicShare}%` }}>{clinicShare}%</div>
+        <div className="ap-seg ap-seg-lienco" style={{ width: `${lienCoPct}%` }}>{lienCoPct}%</div>
+        <div className="ap-seg ap-seg-clinic"  style={{ width: `${clinicPct}%` }}>{clinicPct}%</div>
       </div>
       <div className="ap-split-amounts">
         <div className="ap-amount-box ap-amount-lienco">
-          <div className="ap-amount-tag">To LienCo ({lienCoShare}%)</div>
+          <div className="ap-amount-tag">To LienCo</div>
           <div className="ap-amount-val">{usd(lienCoAmt)}</div>
         </div>
         <div className="ap-amount-box ap-amount-clinic">
-          <div className="ap-amount-tag">To Clinic ({clinicShare}%)</div>
+          <div className="ap-amount-tag">To Clinic(s)</div>
           <div className="ap-amount-val ap-clinic-val">{usd(clinicAmt)}</div>
         </div>
       </div>
@@ -322,25 +392,52 @@ function ComplianceBadges({ market }) {
 
 // ── Main exported component ───────────────────────────────────────────────────
 export default function AttorneyPreview({ liens, initialCaseId }) {
-  const [selectedId,    setSelectedId]    = useState(initialCaseId ?? liens[0]?.id ?? "");
+  // Group liens by caseId so multi-clinic cases show as one entry
+  const caseMap = {};
+  for (const l of liens) {
+    const key = l.caseId ?? l.id;
+    if (!caseMap[key]) caseMap[key] = [];
+    caseMap[key].push(l);
+  }
+  const caseIds = Object.keys(caseMap);
+
+  // Resolve initialCaseId (may be a lienId or a caseId) to a caseId key
+  const resolveInitial = () => {
+    if (!initialCaseId) return caseIds[0] ?? "";
+    const hit = liens.find(l => l.id === initialCaseId || l.caseId === initialCaseId);
+    return hit?.caseId ?? hit?.id ?? caseIds[0] ?? "";
+  };
+
+  const [selectedCaseId, setSelectedCaseId] = useState(resolveInitial);
   const [showSettle,    setShowSettle]    = useState(false);
   const [showReduction, setShowReduction] = useState(false);
   const [toast,         setToast]         = useState("");
   const [waterfall,     setWaterfall]     = useState(null);
 
-  // Keep in sync if initialCaseId changes (from "Preview" button in lien table)
-  if (initialCaseId && initialCaseId !== selectedId) {
-    setSelectedId(initialCaseId);
+  // Sync when the parent changes which lien to preview
+  const resolvedInitial = initialCaseId
+    ? (liens.find(l => l.id === initialCaseId || l.caseId === initialCaseId)?.caseId ?? initialCaseId)
+    : null;
+  if (resolvedInitial && resolvedInitial !== selectedCaseId) {
+    setSelectedCaseId(resolvedInitial);
     setWaterfall(null);
   }
 
-  const lien = liens.find(l => l.id === selectedId) ?? liens[0];
+  // All clinics in the selected case, shaped for WaterfallCard
+  const caseClinics = (caseMap[selectedCaseId] ?? []).map(l => ({
+    id: l.id, clinic: l.clinic, bill: l.bill, split: l.split ?? 70,
+  }));
+  const lien = caseMap[selectedCaseId]?.[0] ?? liens[0];
   if (!lien) return <div className="ap-empty">No liens available. Create one first.</div>;
 
-  const info = MARKET_INFO[lien.market] ?? { state: "Unknown", statute: "N/A" };
+  const info      = MARKET_INFO[lien.market] ?? { state: "Unknown", statute: "N/A" };
+  const totalBill = caseClinics.reduce((s, c) => s + c.bill, 0);
+  const isMulti   = caseClinics.length > 1;
 
-  // Use waterfall-computed amount for split visual; fall back to bill if waterfall not set yet
-  const splitAmount = waterfall?.onChainAmount ?? lien.bill;
+  // Aggregate amounts for SplitVisual and action button label
+  const splitLienCoAmt = waterfall?.lienCoAmt     ?? 0;
+  const splitClinicAmt = waterfall?.clinicAmt      ?? 0;
+  const splitAmount    = waterfall?.onChainAmount   ?? totalBill;
 
   return (
     <div className="ap-root">
@@ -348,14 +445,15 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
       {showSettle && (
         <SettleModal
           lien={lien}
+          caseClinics={caseClinics}
           waterfall={waterfall}
           onClose={() => setShowSettle(false)}
         />
       )}
       {showReduction && (
         <ReductionModal
-          caseId={lien.id}
-          bill={lien.bill}
+          caseId={lien.caseId ?? lien.id}
+          bill={totalBill}
           split={lien.split}
           onClose={() => setShowReduction(false)}
           onSubmitted={(id) => {
@@ -371,34 +469,41 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
         The full portal is available at <code>/attorney/:caseId</code> for real attorney access.
       </div>
 
-      {/* Case selector */}
+      {/* Case selector — one entry per caseId */}
       <div className="ap-selector-row">
         <label className="ap-selector-label">Select a case to preview:</label>
         <select
           className="ap-selector"
-          value={selectedId}
-          onChange={e => { setSelectedId(e.target.value); setWaterfall(null); }}
+          value={selectedCaseId}
+          onChange={e => { setSelectedCaseId(e.target.value); setWaterfall(null); }}
         >
-          {liens.map(l => (
-            <option key={l.id} value={l.id}>
-              {l.id} — {l.clinic} ({l.market}) — ${Number(l.bill).toLocaleString()}
-            </option>
-          ))}
+          {caseIds.map(cid => {
+            const clinics  = caseMap[cid];
+            const first    = clinics[0];
+            const total    = clinics.reduce((s, c) => s + c.bill, 0);
+            const lbl      = clinics.length > 1
+              ? `${cid} — ${clinics.length} clinics (${first.market}) — $${Number(total).toLocaleString()}`
+              : `${cid} — ${first.clinic} (${first.market}) — $${Number(first.bill).toLocaleString()}`;
+            return <option key={cid} value={cid}>{lbl}</option>;
+          })}
         </select>
       </div>
 
       {/* Case card */}
       <div className="ap-case-card">
         <div className="ap-case-eyebrow">Case Ready for Settlement</div>
-        <h2 className="ap-case-id">{lien.id}</h2>
-        <p className="ap-case-meta">Clinic: <strong>{lien.clinic}</strong> · Market: <strong>{lien.market}</strong> · {info.state}</p>
+        <h2 className="ap-case-id">{selectedCaseId}</h2>
+        <p className="ap-case-meta">
+          {isMulti ? `${caseClinics.length} clinics` : `Clinic: ${lien.clinic}`}
+          {" · Market: "}<strong>{lien.market}</strong>{" · "}{info.state}
+        </p>
         <div className="ap-info-grid">
           {[
-            ["Clinic",          lien.clinic],
-            ["Market",          lien.market],
-            ["State / Statute", `${info.state} · ${info.statute}`],
-            ["Medical Bill",    usd(lien.bill)],
-            ["Status",          lien.status ?? "Active"],
+            ["Clinic(s)",          isMulti ? `${caseClinics.length} clinics` : lien.clinic],
+            ["Market",             lien.market],
+            ["State / Statute",    `${info.state} · ${info.statute}`],
+            ["Total Medical Bill", usd(totalBill)],
+            ["Status",             lien.status ?? "Active"],
           ].map(([label, value]) => (
             <div key={label} className="ap-info-row">
               <span className="ap-info-label">{label}</span>
@@ -408,16 +513,15 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
         </div>
       </div>
 
-      {/* Waterfall — above the split visual */}
+      {/* Waterfall — multi-clinic aware */}
       <WaterfallCard
-        key={lien.id}
-        bill={lien.bill}
-        lienCoShare={lien.split ?? 70}
+        key={selectedCaseId}
+        clinics={caseClinics}
         onWaterfallChange={setWaterfall}
       />
 
-      {/* Split visual — driven by waterfall's on-chain amount */}
-      <SplitVisual lienCoShare={lien.split ?? 70} amount={splitAmount} />
+      {/* Split visual — driven by aggregate waterfall amounts */}
+      <SplitVisual lienCoAmt={splitLienCoAmt} clinicAmt={splitClinicAmt} />
 
       <ComplianceBadges market={lien.market} />
 

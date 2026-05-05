@@ -176,6 +176,25 @@
 /* Empty state */
 .ap-empty { padding: 48px 24px; text-align: center; color: var(--muted); font-size: 0.9rem; }
 
+/* ── Per-clinic breakdown table ──────────────────────────────────────────────── */
+.ap-wf-clinic-table  { overflow-x: auto; margin-top: 8px; }
+.ap-wf-clinic-grid   { min-width: 480px; }
+.ap-wf-clinic-hdr    { display: grid; grid-template-columns: 2fr 1fr 1fr 0.6fr 1fr 1fr; gap: 6px; padding: 5px 4px; border-bottom: 1px solid var(--border); }
+.ap-wf-clinic-hdr span { font-size: 0.67rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); text-align: right; }
+.ap-wf-clinic-hdr span:first-child { text-align: left; }
+.ap-wf-clinic-row    { display: grid; grid-template-columns: 2fr 1fr 1fr 0.6fr 1fr 1fr; gap: 6px; padding: 7px 4px; border-bottom: 1px solid var(--border); align-items: baseline; }
+.ap-wf-clinic-row:last-child { border-bottom: none; }
+.ap-wf-clinic-name   { font-size: 0.8rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-wf-clinic-val    { font-size: 0.8rem; color: var(--muted); text-align: right; }
+.ap-wf-clinic-lco    { font-size: 0.8rem; color: var(--accent); text-align: right; font-weight: 600; }
+.ap-wf-clinic-cli    { font-size: 0.8rem; color: var(--green);  text-align: right; font-weight: 600; }
+.ap-wf-clinic-totals { display: grid; grid-template-columns: 2fr 1fr 1fr 0.6fr 1fr 1fr; gap: 6px; padding: 8px 4px; border-top: 2px solid var(--border); margin-top: 2px; }
+.ap-wf-clinic-totals span { font-size: 0.82rem; font-weight: 700; color: var(--text); text-align: right; }
+.ap-wf-clinic-totals span:first-child { text-align: left; }
+.ap-wf-clinic-totals .ap-wf-clinic-lco { color: var(--accent); }
+.ap-wf-clinic-totals .ap-wf-clinic-cli { color: var(--green); }
+.ap-wf-prorata-note  { font-size: 0.73rem; color: var(--muted); font-style: italic; padding: 4px 4px 0; }
+
 /* ── Waterfall card ─────────────────────────────────────────────────────────── */
 .ap-waterfall-card {
   background: var(--bg2); border: 1px solid var(--border);
