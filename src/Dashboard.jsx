@@ -70,6 +70,21 @@ function FlagBadge({ flag }) {
   );
 }
 
+function MultiChip({ markets }) {
+  const [tip, setTip] = useState(false);
+  return (
+    <span
+      className="db-market-chip db-multi-chip"
+      onMouseEnter={() => setTip(true)}
+      onMouseLeave={() => setTip(false)}
+      style={{ position: "relative" }}
+    >
+      Multi
+      {tip && <span className="flag-tip">{markets.join(", ")}</span>}
+    </span>
+  );
+}
+
 function MarketFilter({ value, onChange }) {
   return (
     <div className="db-mkt-filter" role="tablist" aria-label="Market filter">
@@ -105,17 +120,17 @@ function CaseGroupRow({ caseId, clinics, onPreview }) {
   const wtdLienCoPct  = totalBill > 0 ? Math.round(wtdLienCoAmt / totalBill * 100) : 70;
   const wtdClinicPct  = 100 - wtdLienCoPct;
 
-  // Case status: Settled only if all are settled; Draft only if all are draft; else Active
-  const statuses = new Set(clinics.map(c => c.status ?? "Active"));
+  // Case status: undefined status → "Settled" (matches original LienRow fallthrough logic;
+  // seed liens have no status field and should display as Settled)
+  const statuses = new Set(clinics.map(c => c.status ?? "Settled"));
   const caseStatus = statuses.size === 1 ? [...statuses][0]
-    : statuses.has("Active") ? "Active" : "Draft";
+    : statuses.has("Active") ? "Active" : statuses.has("Draft") ? "Draft" : "Settled";
 
   // Flags: union across all clinics
   const allFlags = [...new Set(clinics.flatMap(c => c.flags ?? []))];
 
-  // Markets: show single chip or "Multi" if clinics span different markets
-  const markets  = [...new Set(clinics.map(c => c.market))];
-  const mktLabel = markets.length === 1 ? markets[0] : `Multi`;
+  // Markets: show single chip or a hoverable "Multi" if clinics span different markets
+  const markets = [...new Set(clinics.map(c => c.market))];
 
   // Earliest date
   const date = clinics.reduce((min, c) => (!min || c.ts < min ? c.ts : min), null);
@@ -144,7 +159,11 @@ function CaseGroupRow({ caseId, clinics, onPreview }) {
             )}
           </span>
         </td>
-        <td><span className="db-market-chip">{mktLabel}</span></td>
+        <td>
+          {markets.length === 1
+            ? <span className="db-market-chip">{markets[0]}</span>
+            : <MultiChip markets={markets} />}
+        </td>
         <td style={{ fontWeight: 700 }}>{usd(totalBill)}</td>
         <td>
           <div className="db-split-bar" style={{ width: 80 }}>
@@ -187,7 +206,7 @@ function CaseGroupRow({ caseId, clinics, onPreview }) {
               ? (c.flags ?? []).map(f => <FlagBadge key={f} flag={f} />)
               : <span className="db-muted">—</span>}
           </td>
-          <td><StatusCell status={c.status ?? "Active"} /></td>
+          <td><StatusCell status={c.status ?? "Settled"} /></td>
           <td>
             {c.tx1
               ? <a href={EXPLORER + c.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(c.tx1)}</a>
@@ -262,7 +281,7 @@ function LienRow({ r, onPreview }) {
       <td className="db-flags-cell">
         {r.flags.length ? r.flags.map(f => <FlagBadge key={f} flag={f} />) : <span className="db-muted">—</span>}
       </td>
-      <td><StatusCell status={r.status ?? "Active"} /></td>
+      <td><StatusCell status={r.status ?? "Settled"} /></td>
       <td>
         {r.tx1
           ? <a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a>
@@ -382,6 +401,17 @@ export default function Dashboard() {
     setActiveTab("attorney");
   };
 
+  // Called by AttorneyPreview when a settlement completes — marks all clinic liens Settled
+  const handleSettled = (caseId, lienIds) => {
+    setLiens(prev => {
+      const updated = prev.map(l =>
+        lienIds.includes(l.id) ? { ...l, status: "Settled" } : l
+      );
+      saveLiens(updated, SEED_IDS);
+      return updated;
+    });
+  };
+
   const marketLabel = market === "All" ? "" : ` · ${market}`;
   const showMarketFilter = activeTab !== "attorney";
 
@@ -443,7 +473,7 @@ export default function Dashboard() {
 
         {/* ATTORNEY VIEW TAB */}
         {activeTab === "attorney" && (
-          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} />
+          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} />
         )}
 
         {/* DASHBOARD TAB — overview stats + wallet panel + live activity */}

@@ -241,3 +241,14 @@
 .ap-wf-green  { color: var(--green); }
 .ap-wf-amber  { color: #fbbf24; }
 .ap-wf-red    { color: #f87171; }
+
+/* ── Case Reductions panel ──────────────────────────────────────────────────── */
+.ap-reductions-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.ap-reduction-row { background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.ap-reduction-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ap-reduction-clinic { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+.ap-reduction-detail { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+.ap-reduction-badge { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.ap-red-open     { background: rgba(245,158,11,0.1);   border: 1px solid rgba(245,158,11,0.3);   color: #fbbf24; }
+.ap-red-accepted { background: rgba(16,185,129,0.1);   border: 1px solid rgba(16,185,129,0.25);  color: var(--green); }
+.ap-red-declined { background: rgba(100,116,139,0.15); border: 1px solid rgba(100,116,139,0.3);  color: var(--muted); }

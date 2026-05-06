@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import "./AttorneyPreview.css";
 import ReductionModal from "./ReductionModal.jsx";
+import { loadReductionRequests } from "../lib/store.js";
+
+// Generates a plausible-looking 64-char hex TX hash for demo settlement
+function genFakeTxHash() {
+  const h = "0123456789ABCDEF";
+  return Array.from({ length: 64 }, () => h[Math.floor(Math.random() * 16)]).join("");
+}
 
 // Market compliance info
 const MARKET_INFO = {
@@ -199,33 +206,44 @@ function WaterfallCard({ clinics, onWaterfallChange }) {
 }
 
 // ── SettleModal ───────────────────────────────────────────────────────────────
-function SettleModal({ onClose, lien, caseClinics, waterfall }) {
-  const [phase, setPhase] = useState("confirm");
-  const [step,  setStep]  = useState(0);
+function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
+  const [phase,    setPhase]    = useState("confirm");
+  const [step,     setStep]     = useState(0);
+  const [txHashes, setTxHashes] = useState([]); // one per clinic
 
   const settleAmt = waterfall?.onChainAmount ?? caseClinics.reduce((s, c) => s + c.bill, 0);
   const lienCoAmt = waterfall?.lienCoAmt     ?? 0;
   const clinicAmt = waterfall?.clinicAmt     ?? 0;
+  const isMulti   = caseClinics.length > 1;
+  const caseId    = lien.caseId ?? lien.id;
 
-  // Effective split % derived from aggregate amounts (for display + compliance checks)
   const effectiveLienCoPct = (lienCoAmt + clinicAmt) > 0
     ? Math.round(lienCoAmt / (lienCoAmt + clinicAmt) * 100)
     : (caseClinics[0]?.split ?? 70);
-
-  // Indiana compliance: flag if any IN-market clinic has lienCo split > 80%
-  const hasInViolation = lien.market === "IN" && effectiveLienCoPct > 80;
+  const hasInViolation  = lien.market === "IN" && effectiveLienCoPct > 80;
   const hasUnusualSplit = effectiveLienCoPct < 30 || effectiveLienCoPct > 85;
 
-  const steps = [
-    { label: "Verifying attorney credentials",  detail: "Bar # on file" },
-    { label: "Confirming lien details",          detail: lien.market + " market" },
-    { label: "Executing settlement on XRPL",     detail: "Hook auto-splitting funds" },
-    { label: "Settlement complete",              detail: "3.2 seconds" },
-  ];
+  // Steps: single-clinic = 4 classic; multi-clinic = 1 verify + N per-clinic + 1 done
+  const steps = isMulti
+    ? [
+        { label: "Verifying attorney credentials", detail: "Bar # on file" },
+        ...caseClinics.map((c, i) => ({
+          label: `Settling clinic ${i + 1} of ${caseClinics.length}`,
+          detail: c.clinic,
+        })),
+        { label: "All settlements confirmed", detail: `${caseClinics.length} TXs on XRPL` },
+      ]
+    : [
+        { label: "Verifying attorney credentials", detail: "Bar # on file" },
+        { label: "Confirming lien details",         detail: lien.market + " market" },
+        { label: "Executing settlement on XRPL",    detail: "Hook auto-splitting funds" },
+        { label: "Settlement complete",             detail: "3.2 seconds" },
+      ];
 
   async function run() {
+    const hashes = caseClinics.map(() => genFakeTxHash());
     const memoData = {
-      caseId:             lien.caseId ?? lien.id,
+      caseId,
       grossSettlement:    waterfall?.grossNum,
       attorneyFeePercent: waterfall?.attyFeePct,
       attorneyFeeAmount:  waterfall?.attyFeeAmt,
@@ -234,17 +252,24 @@ function SettleModal({ onClose, lien, caseClinics, waterfall }) {
       lienCoAmount:       lienCoAmt,
       clinicAmount:       clinicAmt,
       patientNetRecovery: waterfall?.patientNet,
-      clinicRows:         waterfall?.clinicRows?.map(r => ({ id: r.id, clinic: r.clinic, recovery: r.recovery, lienCoAmt: r.lienCoAmt, clinicAmt: r.clinicAmt })),
+      clinicRows: waterfall?.clinicRows?.map(r => ({
+        id: r.id, clinic: r.clinic,
+        recovery: r.recovery, lienCoAmt: r.lienCoAmt, clinicAmt: r.clinicAmt,
+      })),
     };
     console.log("[LienChain] Settlement memo (on-chain data):", memoData);
 
     setPhase("running");
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < steps.length; i++) {
       setStep(i);
-      await new Promise(r => setTimeout(r, 1100 + i * 100));
+      await new Promise(r => setTimeout(r, 900 + (i % 2) * 500));
     }
+    setTxHashes(hashes);
     setPhase("done");
+    onSettled?.(caseId, caseClinics.map(c => c.id));
   }
+
+  const EXPLORER = "https://testnet.xrpl.org/transactions/";
 
   return (
     <div className="ap-overlay" onClick={onClose}>
@@ -254,9 +279,11 @@ function SettleModal({ onClose, lien, caseClinics, waterfall }) {
         {phase === "confirm" && (
           <>
             <h3 className="ap-modal-title">Confirm Settlement</h3>
-            <p className="ap-modal-sub">Settling <strong>{lien.caseId ?? lien.id}</strong></p>
+            <p className="ap-modal-sub">
+              Settling <strong>{caseId}</strong>
+              {isMulti ? ` — ${caseClinics.length} clinics` : ""}
+            </p>
 
-            {/* Read-only split summary */}
             <div className="ap-wf-breakdown">
               <div className="ap-wf-row">
                 <span className="ap-wf-row-label">Amount settling on-chain</span>
@@ -290,7 +317,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall }) {
             <div className="ap-legal-note">
               By clicking Execute, you authorize settlement under{" "}
               {MARKET_INFO[lien.market]?.statute ?? "applicable statute"}.
-              Transaction will be recorded on the XRPL public ledger.
+              Transaction{isMulti ? "s" : ""} will be recorded on the XRPL public ledger.
             </div>
             <button className="ap-execute-btn" onClick={run}>
               Execute Settlement — {usd(settleAmt)}
@@ -303,7 +330,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall }) {
             <h3 className="ap-modal-title">
               {phase === "done" ? "Settlement Complete" : "Processing…"}
             </h3>
-            <p className="ap-modal-sub">{lien.id} — {usd(settleAmt)}</p>
+            <p className="ap-modal-sub">{caseId} — {usd(settleAmt)}</p>
             <div className="ap-steps">
               {steps.map((s, i) => (
                 <div key={i} className={`ap-step ${(step >= i || phase === "done") ? "ap-step-active" : ""}`}>
@@ -319,11 +346,38 @@ function SettleModal({ onClose, lien, caseClinics, waterfall }) {
             </div>
             {phase === "done" && (
               <>
-                <div className="ap-hash-box">
-                  <div className="ap-hash-label">Transaction Hash</div>
-                  <code className="ap-hash">A8F2D1C9B3E7…9B3E (simulated)</code>
-                </div>
-                <button className="ap-execute-btn" onClick={onClose}>Done</button>
+                {isMulti ? (
+                  /* Multi-clinic: list one TX hash per clinic */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {caseClinics.map((c, i) => (
+                      <div key={c.id} className="ap-hash-box">
+                        <div className="ap-hash-label">{c.clinic}</div>
+                        <a
+                          href={EXPLORER + txHashes[i]}
+                          target="_blank" rel="noreferrer"
+                          className="ap-hash"
+                          style={{ textDecoration: "none" }}
+                        >
+                          {txHashes[i]?.slice(0, 16)}…{txHashes[i]?.slice(-8)} ↗
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Single-clinic: one hash box */
+                  <div className="ap-hash-box">
+                    <div className="ap-hash-label">Transaction Hash</div>
+                    <a
+                      href={EXPLORER + txHashes[0]}
+                      target="_blank" rel="noreferrer"
+                      className="ap-hash"
+                      style={{ textDecoration: "none" }}
+                    >
+                      {txHashes[0]?.slice(0, 16)}…{txHashes[0]?.slice(-8)} ↗
+                    </a>
+                  </div>
+                )}
+                <button className="ap-execute-btn" style={{ marginTop: 4 }} onClick={onClose}>Done</button>
               </>
             )}
           </>
@@ -390,8 +444,46 @@ function ComplianceBadges({ market }) {
   );
 }
 
+// ── CaseReductionsPanel ───────────────────────────────────────────────────────
+// Shows all reduction requests submitted for the selected case — view-only in Phase 5.
+// Each clinic on the case can see requests from other clinics for transparency.
+function CaseReductionsPanel({ caseId, reductions }) {
+  const rows = reductions.filter(r => r.caseId === caseId);
+  const fmtShort = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  return (
+    <div className="ap-compliance-card">
+      <div className="ap-compliance-label">
+        Case Reductions{rows.length > 0 ? ` — ${rows.length} request${rows.length === 1 ? "" : "s"}` : ""}
+      </div>
+      {rows.length === 0 ? (
+        <p className="ap-compliance-text">No reduction requests submitted for this case.</p>
+      ) : (
+        <div className="ap-reductions-list">
+          {rows.map(r => (
+            <div key={r.id} className="ap-reduction-row">
+              <div className="ap-reduction-main">
+                <span className="ap-reduction-clinic">
+                  {r.clinicName || r.clinicLienId || "—"}
+                </span>
+                <span className={`ap-reduction-badge ap-red-${r.status}`}>{r.status}</span>
+              </div>
+              <div className="ap-reduction-detail">
+                Proposed {usd(r.proposedAmount)} — was {usd(r.originalAmount)}
+                {r.reason ? ` · ${r.reason}` : ""}
+                {" · "}{fmtShort(r.submittedAt)}
+                {r.submittedBy ? ` · ${r.submittedBy}` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main exported component ───────────────────────────────────────────────────
-export default function AttorneyPreview({ liens, initialCaseId }) {
+export default function AttorneyPreview({ liens, initialCaseId, onSettled }) {
   // Group liens by caseId so multi-clinic cases show as one entry
   const caseMap = {};
   for (const l of liens) {
@@ -413,6 +505,7 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
   const [showReduction, setShowReduction] = useState(false);
   const [toast,         setToast]         = useState("");
   const [waterfall,     setWaterfall]     = useState(null);
+  const [reductions,    setReductions]    = useState(() => loadReductionRequests());
 
   // Sync when the parent changes which lien to preview
   const resolvedInitial = initialCaseId
@@ -448,15 +541,19 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
           caseClinics={caseClinics}
           waterfall={waterfall}
           onClose={() => setShowSettle(false)}
+          onSettled={onSettled}
         />
       )}
       {showReduction && (
         <ReductionModal
-          caseId={lien.caseId ?? lien.id}
+          caseId={selectedCaseId}
+          clinicLienId={isMulti ? selectedCaseId : lien.id}
+          clinicName={isMulti ? `${caseClinics.length} clinics` : lien.clinic}
           bill={totalBill}
           split={lien.split}
           onClose={() => setShowReduction(false)}
           onSubmitted={(id) => {
+            setReductions(loadReductionRequests());
             setToast(`Reduction request submitted for case ${id}`);
             setTimeout(() => setToast(""), 3500);
           }}
@@ -524,6 +621,9 @@ export default function AttorneyPreview({ liens, initialCaseId }) {
       <SplitVisual lienCoAmt={splitLienCoAmt} clinicAmt={splitClinicAmt} />
 
       <ComplianceBadges market={lien.market} />
+
+      {/* Case-wide reduction requests — all clinics visible for transparency */}
+      <CaseReductionsPanel caseId={selectedCaseId} reductions={reductions} />
 
       {/* Action buttons */}
       <div className="ap-actions">

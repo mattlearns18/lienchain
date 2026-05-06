@@ -2,6 +2,7 @@ import { useState } from "react";
 import "./AttorneyPreview.css";
 import "./IntakeWizard.css";
 import "./ReductionModal.css";
+import { addReductionRequest } from "../lib/store.js";
 
 const REASONS = [
   "Settlement smaller than expected",
@@ -31,6 +32,8 @@ const usd = (n) =>
 
 export default function ReductionModal({
   caseId,
+  clinicLienId,   // optional — defaults to caseId for single-clinic cases
+  clinicName,     // optional — displayed in Case Reductions panel
   bill,
   split,
   attorneyName = "",
@@ -87,7 +90,22 @@ export default function ReductionModal({
       setStep(i);
       await new Promise(r => setTimeout(r, DELAYS[i]));
     }
-    setRequestId(genRequestId());
+
+    const id = genRequestId();
+    addReductionRequest({
+      id,
+      caseId,
+      clinicLienId:    clinicLienId ?? caseId,
+      clinicName:      clinicName   ?? "",
+      originalAmount:  bill,
+      proposedAmount:  proposedNum,
+      reason,
+      context,
+      submittedBy:     name,
+      submittedAt:     new Date().toISOString(),
+      status:          "open",
+    });
+    setRequestId(id);
     setPhase("done");
   }
 
