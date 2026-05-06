@@ -81,13 +81,15 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 ## 6. Current State
 
-**Phase 3 and Phase 4 are complete.**
+**Phase 3, Phase 4, and Phase 5 are complete.**
 
 *Phase 3* — real XRPL tokenization on the live site. Intake wizard mints a real testnet MPT, the dashboard reads it back, the attorney preview animates the 4-step settlement and flags compliance issues correctly across all five markets. `phase1-proof.md` documents the testnet settlement proofs (TX 72%, NV 65%, IN 70% LienCo splits) with verifiable XRPL Explorer links.
 
-*Phase 4* — Settlement Waterfall in the attorney portal (`/attorney/:caseId`). Attorneys enter a gross settlement number and the portal walks down through attorney fee, case costs, net available, and the agreed LienCo/clinic split to produce a clean breakdown of who gets paid what. The operator Dashboard was restructured in the same pass into 5 tabs — Dashboard, Liens, Settlements, Compliance, Attorney View — with a shared market filter chip row (All / KC / STL / TX / NV / IN). Wallet balance fetches were migrated from HTTP JSON-RPC to WebSocket to fix a CORS-induced em-dash bug. Explorer URL construction was fixed on the `/attorney/demo` success screen.
+*Phase 4* — Settlement Waterfall in the attorney portal (`/attorney/:caseId`). Operator Dashboard restructured to 5 tabs — Dashboard, Liens, Settlements, Compliance, Attorney View — with a shared market filter chip row (All / KC / STL / TX / NV / IN). Wallet balance fetches migrated from HTTP JSON-RPC to WebSocket to fix a CORS-induced em-dash bug. Explorer URL fixed on the `/attorney/demo` success screen.
 
-**Next queued build: TBD.** Waterfall was the last queued item. Candidates to weigh in the next planning session: per-state config extraction (the `MARKETS` / `MARKET_INFO` refactor called out in §4), secondary-market bid UI, attorney onboarding/invite flow, portfolio analytics, or mainnet readiness work. Decide with Matt before committing to one.
+*Phase 5* — Multi-clinic cases with shared reductions. A single PI case now groups N clinic liens under a parent `Case` record. The intake wizard supports "Add clinic to existing case" with attorney + treatment fields inherited as read-only. The waterfall distributes net-available **pro-rata** across all clinics on a case (with a totals row + pro-rata note when net pool falls short of total bills). The Liens tab groups multi-clinic cases under expandable parent rows with weighted-avg split bars; market filters ungroup cases to show only the matching clinic when filtered to a single state. Reduction requests are stored at the case level and visible to every clinic on the case. Settlement execution runs one TX per clinic in sequence. State persists across reloads via localStorage; legacy single-clinic liens carried forward via a `caseId = lien.id` back-compat shim. Spec at `phase5-plan.md`.
+
+**Next queued build: TBD.** Phase 5 was the queued item. Candidates for the next planning session: per-state config refactor (the `MARKETS` / `MARKET_INFO` extraction called out in §4), secondary-market bid UI, attorney provisioning / invite flow, portfolio analytics, mainnet readiness work, or per-state lien-priority rules in the waterfall (TX hospital lien priority, IN cascading 20% floor) which Phase 5 deferred. Decide with Matt before committing to one.
 
 ## 7. Business Gaps Still Open
 
