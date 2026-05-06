@@ -88,6 +88,169 @@ function MarketFilter({ value, onChange }) {
   );
 }
 
+function StatusCell({ status }) {
+  if (status === "Active")  return <span className="db-status-active">🟢 Active</span>;
+  if (status === "Draft")   return <span className="db-status-draft">📋 Draft</span>;
+  return <span className="db-status-badge">✅ Settled</span>;
+}
+
+// ── CaseGroupRow — one parent row per case, optional child rows per clinic ───
+function CaseGroupRow({ caseId, clinics, onPreview }) {
+  const [open, setOpen] = useState(false);
+  const isMulti = clinics.length > 1;
+
+  // Aggregate stats for the parent row
+  const totalBill     = clinics.reduce((s, c) => s + c.bill, 0);
+  const wtdLienCoAmt  = clinics.reduce((s, c) => s + c.bill * (c.split ?? 70) / 100, 0);
+  const wtdLienCoPct  = totalBill > 0 ? Math.round(wtdLienCoAmt / totalBill * 100) : 70;
+  const wtdClinicPct  = 100 - wtdLienCoPct;
+
+  // Case status: Settled only if all are settled; Draft only if all are draft; else Active
+  const statuses = new Set(clinics.map(c => c.status ?? "Active"));
+  const caseStatus = statuses.size === 1 ? [...statuses][0]
+    : statuses.has("Active") ? "Active" : "Draft";
+
+  // Flags: union across all clinics
+  const allFlags = [...new Set(clinics.flatMap(c => c.flags ?? []))];
+
+  // Markets: show single chip or "Multi" if clinics span different markets
+  const markets  = [...new Set(clinics.map(c => c.market))];
+  const mktLabel = markets.length === 1 ? markets[0] : `Multi`;
+
+  // Earliest date
+  const date = clinics.reduce((min, c) => (!min || c.ts < min ? c.ts : min), null);
+
+  // TX links only for single-clinic cases
+  const single = !isMulti ? clinics[0] : null;
+
+  return (
+    <>
+      {/* Parent / case row */}
+      <tr className="db-case-row">
+        <td className="db-lien-id">
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {isMulti && (
+              <button
+                className="db-expand-toggle"
+                onClick={() => setOpen(o => !o)}
+                aria-label={open ? "Collapse" : "Expand"}
+              >
+                {open ? "▾" : "▸"}
+              </button>
+            )}
+            <span>{caseId}</span>
+            {isMulti && (
+              <span className="db-clinics-badge">{clinics.length} clinics</span>
+            )}
+          </span>
+        </td>
+        <td><span className="db-market-chip">{mktLabel}</span></td>
+        <td style={{ fontWeight: 700 }}>{usd(totalBill)}</td>
+        <td>
+          <div className="db-split-bar" style={{ width: 80 }}>
+            <div className="db-split-lienco" style={{ width: `${wtdLienCoPct}%` }}>{wtdLienCoPct}%</div>
+            <div className="db-split-clinic"  style={{ width: `${wtdClinicPct}%` }}>{wtdClinicPct}%</div>
+          </div>
+        </td>
+        <td className="db-muted">{date ? fmtDate(date) : "—"}</td>
+        <td className="db-flags-cell">
+          {allFlags.length ? allFlags.map(f => <FlagBadge key={f} flag={f} />) : <span className="db-muted">—</span>}
+        </td>
+        <td><StatusCell status={caseStatus} /></td>
+        <td>
+          {single?.tx1
+            ? <a href={EXPLORER + single.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(single.tx1)}</a>
+            : <span className="db-muted">{isMulti ? "—" : "—"}</span>}
+        </td>
+        <td>
+          {single?.tx2
+            ? <a href={EXPLORER + single.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(single.tx2)}</a>
+            : <span className="db-muted">—</span>}
+        </td>
+        <td>
+          <button className="db-preview-btn" onClick={() => onPreview(caseId)}>Attorney View →</button>
+        </td>
+      </tr>
+
+      {/* Child rows — one per clinic, shown when expanded */}
+      {isMulti && open && clinics.map(c => (
+        <tr key={c.id} className="db-child-row">
+          <td className="db-lien-id">
+            <span className="db-child-indent">↳ {c.id}</span>
+          </td>
+          <td><span className="db-market-chip">{c.market}</span></td>
+          <td>{usd(c.bill)}</td>
+          <td>{c.split ?? 70}% / {100 - (c.split ?? 70)}%</td>
+          <td className="db-muted">{fmtDate(c.ts)}</td>
+          <td className="db-flags-cell">
+            {(c.flags ?? []).length
+              ? (c.flags ?? []).map(f => <FlagBadge key={f} flag={f} />)
+              : <span className="db-muted">—</span>}
+          </td>
+          <td><StatusCell status={c.status ?? "Active"} /></td>
+          <td>
+            {c.tx1
+              ? <a href={EXPLORER + c.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(c.tx1)}</a>
+              : <span className="db-muted">—</span>}
+          </td>
+          <td>
+            {c.tx2
+              ? <a href={EXPLORER + c.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(c.tx2)}</a>
+              : <span className="db-muted">—</span>}
+          </td>
+          <td><span className="db-muted">—</span></td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// ── CaseLienTable — groups liens by caseId, renders CaseGroupRow per case ────
+function CaseLienTable({ rows, emptyText, onPreview }) {
+  if (!rows.length) return <div className="db-feed-empty">{emptyText}</div>;
+
+  // Group by caseId, preserving insertion order
+  const caseMap = {};
+  const caseOrder = [];
+  for (const r of rows) {
+    const key = r.caseId ?? r.id;
+    if (!caseMap[key]) { caseMap[key] = []; caseOrder.push(key); }
+    caseMap[key].push(r);
+  }
+
+  return (
+    <div className="db-table-wrap">
+      <table className="db-table">
+        <thead>
+          <tr>
+            <th>Case / Lien ID</th>
+            <th>Market</th>
+            <th>Bill</th>
+            <th>Split</th>
+            <th>Date</th>
+            <th>Flags</th>
+            <th>Status</th>
+            <th>TX 1</th>
+            <th>TX 2</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {caseOrder.map(cid => (
+            <CaseGroupRow
+              key={cid}
+              caseId={cid}
+              clinics={caseMap[cid]}
+              onPreview={onPreview}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Flat LienTable kept for the Settlements tab (settled-only, no grouping needed)
 function LienRow({ r, onPreview }) {
   return (
     <tr>
@@ -99,13 +262,7 @@ function LienRow({ r, onPreview }) {
       <td className="db-flags-cell">
         {r.flags.length ? r.flags.map(f => <FlagBadge key={f} flag={f} />) : <span className="db-muted">—</span>}
       </td>
-      <td>
-        {r.status === "Active"
-          ? <span className="db-status-active">🟢 Active</span>
-          : r.status === "Draft"
-          ? <span className="db-status-draft">📋 Draft</span>
-          : <span className="db-status-badge">✅ Settled</span>}
-      </td>
+      <td><StatusCell status={r.status ?? "Active"} /></td>
       <td>
         {r.tx1
           ? <a href={EXPLORER + r.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(r.tx1)}</a>
@@ -124,9 +281,7 @@ function LienRow({ r, onPreview }) {
 }
 
 function LienTable({ rows, emptyText, onPreview }) {
-  if (!rows.length) {
-    return <div className="db-feed-empty">{emptyText}</div>;
-  }
+  if (!rows.length) return <div className="db-feed-empty">{emptyText}</div>;
   return (
     <div className="db-table-wrap">
       <table className="db-table">
@@ -426,7 +581,7 @@ export default function Dashboard() {
 
           <section className="db-section">
             <h2 className="db-section-title">Settlement Ledger</h2>
-            <LienTable
+            <CaseLienTable
               rows={filteredLiens}
               emptyText={market === "All" ? "No liens yet." : `No liens in ${market}.`}
               onPreview={handlePreview}
