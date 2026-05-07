@@ -19,21 +19,19 @@ const CLINICS = [
   "Other",
 ];
 
-const MARKETS = [
-  { value: "KC",  label: "KC — Kansas City"  },
-  { value: "STL", label: "STL — St. Louis"   },
-  { value: "TX",  label: "TX — Texas"        },
-  { value: "NV",  label: "NV — Nevada"       },
-  { value: "IN",  label: "IN — Indiana"      },
-];
+import { MARKETS as MARKETS_LIST, MARKET_INFO } from "../lib/markets.js";
 
-const MARKET_INFO = {
-  KC:  { state: "Missouri", statute: "RSMo §484.130",                     warnings: [] },
-  STL: { state: "Missouri", statute: "RSMo §484.130",                     warnings: [] },
-  TX:  { state: "Texas",    statute: "Tex. Health & Safety Code §55.005", warnings: ["⚠ 72-hour rescission window: Texas law allows lien rescission within 72 hours of assignment. Flag all TX liens."] },
-  NV:  { state: "Nevada",   statute: "NRS Chapter 108.4939",              warnings: [] },
-  IN:  { state: "Indiana",  statute: "Ind. Code §34-51-1",                warnings: ["⛔ Non-assignability risk: Indiana PI liens may be non-assignable. Confirm assignment validity before issuing."] },
-};
+// Wizard market options: exclude "All", shaped as {value, label} for <select>
+const MARKET_OPTIONS = MARKETS_LIST
+  .filter(m => m !== 'All')
+  .map(m => ({
+    value: m,
+    label: m === 'KC'  ? 'KC — Kansas City' :
+           m === 'STL' ? 'STL — St. Louis'  :
+           m === 'TX'  ? 'TX — Texas'       :
+           m === 'NV'  ? 'NV — Nevada'      :
+           m === 'IN'  ? 'IN — Indiana'     : m,
+  }));
 
 const MONTHS   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const YEARS    = [2024, 2025, 2026];
@@ -368,7 +366,7 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
               <label className="wiz-label">Market</label>
               <select className="wiz-select" value={market} onChange={e => setMarket(e.target.value)}>
                 <option value="">Select market…</option>
-                {MARKETS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {MARKET_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </div>
 

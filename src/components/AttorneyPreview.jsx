@@ -9,14 +9,7 @@ function genFakeTxHash() {
   return Array.from({ length: 64 }, () => h[Math.floor(Math.random() * 16)]).join("");
 }
 
-// Market compliance info
-const MARKET_INFO = {
-  KC:  { state: "Missouri", statute: "RSMo §484.130",                     flags: [] },
-  STL: { state: "Missouri", statute: "RSMo §484.130",                     flags: [] },
-  TX:  { state: "Texas",    statute: "Tex. Health & Safety Code §55.005", flags: ["tx-72h"] },
-  NV:  { state: "Nevada",   statute: "NRS Chapter 108.4939",              flags: [] },
-  IN:  { state: "Indiana",  statute: "Ind. Code §34-51-1",               flags: ["in-nonassignable"] },
-};
+import { MARKET_INFO } from "../lib/markets.js";
 
 const usd = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

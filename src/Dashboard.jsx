@@ -31,18 +31,7 @@ const FLAG_INFO = {
   "in-nonassignable": { label: "IN Non-Assignable", color: "flag-red",   tip: "Indiana statute limits lien assignability in PI cases. Confirm assignment validity before secondary transfer." },
 };
 
-// Market filter options (order matters — matches the segmented control rendering)
-const MARKETS = ["All", "KC", "STL", "TX", "NV", "IN"];
-
-// Per-state compliance summary shown in the Compliance tab.
-// Kept conservative — only claims the project has confirmed (see CLAUDE.md §4).
-const MARKET_INFO = {
-  KC:  { state: "Missouri", flags: [],                   notes: "Standard PI lien perfection. No special state-level restrictions currently tracked." },
-  STL: { state: "Missouri", flags: [],                   notes: "Standard PI lien perfection. No special state-level restrictions currently tracked." },
-  TX:  { state: "Texas",    flags: ["tx-72h"],           notes: "72-hour rescission window after assignment. File/record the lien within 72 hours." },
-  NV:  { state: "Nevada",   flags: [],                   notes: "No special state-level restrictions currently tracked." },
-  IN:  { state: "Indiana",  flags: ["in-nonassignable"], notes: "Indiana applies a 20% clinic floor and limits lien assignability. Confirm assignability before secondary transfer." },
-};
+import { MARKETS, MARKET_INFO } from "./lib/markets.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const usd      = (n) => `$${Number(n).toLocaleString()}`;
