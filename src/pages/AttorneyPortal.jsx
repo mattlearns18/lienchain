@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import ReductionModal from "../components/ReductionModal.jsx";
+import { MARKET_INFO } from "../lib/markets.js";
 
 const C = {
   bg: "#06090f",
@@ -483,6 +484,17 @@ export default function AttorneyPortal() {
               <InfoRow label="Days Open" value={caseData.daysOpen + " days"} />
               <InfoRow label="Medical Bill Total" value={fmt(caseData.billAmount)} valueColor={C.white} />
             </div>
+
+            {/* TX hospital lien priority warning — shown for any TX-market case */}
+            {caseData.market === "TX" && MARKET_INFO.TX?.policy?.priorityWarning && (
+              <div style={{ background: C.amberDim, border: `1px solid ${C.amberBorder}`, borderRadius: 10, padding: "14px 18px", marginBottom: 24, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>⚠</span>
+                <p style={{ fontSize: 13, color: C.amber, lineHeight: 1.6, margin: 0 }}>
+                  <strong style={{ display: "block", marginBottom: 4 }}>Texas Hospital Lien Priority Advisory</strong>
+                  {MARKET_INFO.TX.policy.priorityWarning}
+                </p>
+              </div>
+            )}
 
             {/* Settlement Waterfall — above the split visual */}
             <WaterfallSection
