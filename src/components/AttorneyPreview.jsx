@@ -597,7 +597,7 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled }) {
 
   // All clinics in the selected case, shaped for WaterfallCard
   const caseClinics = (caseMap[selectedCaseId] ?? []).map(l => ({
-    id: l.id, clinic: l.clinic, bill: l.bill, split: l.split ?? 70,
+    id: l.id, clinic: l.clinic, bill: l.bill, split: l.split ?? 70, market: l.market,
   }));
   const lien = caseMap[selectedCaseId]?.[0] ?? liens[0];
   if (!lien) return <div className="ap-empty">No liens available. Create one first.</div>;
