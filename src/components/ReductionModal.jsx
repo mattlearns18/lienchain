@@ -32,17 +32,32 @@ const usd = (n) =>
 
 export default function ReductionModal({
   caseId,
-  clinicLienId,   // optional — defaults to caseId for single-clinic cases
-  clinicName,     // optional — displayed in Case Reductions panel
-  bill,
-  split,
+  caseClinics,    // Array<{id, clinic, bill, split}> — passed for multi-clinic cases
+  clinicLienId,   // single-clinic: lien id; multi-clinic: null (derived from picker)
+  clinicName,     // single-clinic: clinic name; multi-clinic: null (derived from picker)
+  bill,           // single-clinic: lien bill; multi-clinic: null (derived from picker)
+  split,          // single-clinic: lien split; multi-clinic: null (derived from picker)
   attorneyName = "",
   onClose,
   onSubmitted,
 }) {
-  const [phase,      setPhase]     = useState("confirm"); // confirm | running | done
-  const [step,       setStep]      = useState(0);
-  const [requestId,  setRequestId] = useState("");
+  const isMultiClinic = Array.isArray(caseClinics) && caseClinics.length > 1;
+
+  const [phase,         setPhase]         = useState("confirm");
+  const [step,          setStep]          = useState(0);
+  const [requestId,     setRequestId]     = useState("");
+
+  // Multi-clinic picker — defaults to first clinic
+  const [pickedId,      setPickedId]      = useState(isMultiClinic ? caseClinics[0].id : "");
+
+  // Resolve active clinic fields from picker (multi) or direct props (single)
+  const activeLienId   = isMultiClinic ? pickedId : (clinicLienId ?? caseId);
+  const activeClinic   = isMultiClinic
+    ? caseClinics.find(c => c.id === pickedId) ?? caseClinics[0]
+    : null;
+  const activeName     = isMultiClinic ? activeClinic.clinic : (clinicName ?? "");
+  const activeBill     = isMultiClinic ? activeClinic.bill   : (bill ?? 0);
+  const activeSplit    = isMultiClinic ? (activeClinic.split ?? 70) : (split ?? 70);
 
   // Form
   const [proposed,   setProposed]   = useState("");
@@ -56,21 +71,21 @@ export default function ReductionModal({
   const [amtError,   setAmtError]   = useState("");
   const [emailError, setEmailError] = useState("");
 
-  // Derived
-  const clinicShare  = 100 - split;
-  const lienCoAmt    = Math.floor(bill * split / 100);
-  const clinicAmt    = bill - lienCoAmt;
+  // Derived (from active clinic)
+  const clinicShare  = 100 - activeSplit;
+  const lienCoAmt    = Math.floor(activeBill * activeSplit / 100);
+  const clinicAmt    = activeBill - lienCoAmt;
   const proposedNum  = parseFloat(proposed) || 0;
-  const newLienCoAmt = proposedNum > 0 ? Math.floor(proposedNum * split / 100) : 0;
+  const newLienCoAmt = proposedNum > 0 ? Math.floor(proposedNum * activeSplit / 100) : 0;
   const newClinicAmt = proposedNum > 0 ? proposedNum - newLienCoAmt : 0;
-  const reduction    = proposedNum > 0 ? bill - proposedNum : 0;
-  const reductionPct = proposedNum > 0 ? ((reduction / bill) * 100).toFixed(1) : "0";
-  const showPreview  = proposedNum > 0 && proposedNum < bill;
+  const reduction    = proposedNum > 0 ? activeBill - proposedNum : 0;
+  const reductionPct = proposedNum > 0 ? ((reduction / activeBill) * 100).toFixed(1) : "0";
+  const showPreview  = proposedNum > 0 && proposedNum < activeBill;
 
   function validateAmt() {
-    if (!proposed)           { setAmtError("Required"); return false; }
-    if (proposedNum >= bill) { setAmtError("Must be less than current bill amount"); return false; }
-    if (proposedNum <= 0)    { setAmtError("Must be greater than $0"); return false; }
+    if (!proposed)                { setAmtError("Required"); return false; }
+    if (proposedNum >= activeBill) { setAmtError("Must be less than current bill amount"); return false; }
+    if (proposedNum <= 0)          { setAmtError("Must be greater than $0"); return false; }
     setAmtError(""); return true;
   }
 
@@ -95,9 +110,9 @@ export default function ReductionModal({
     addReductionRequest({
       id,
       caseId,
-      clinicLienId:    clinicLienId ?? caseId,
-      clinicName:      clinicName   ?? "",
-      originalAmount:  bill,
+      clinicLienId:    activeLienId,
+      clinicName:      activeName,
+      originalAmount:  activeBill,
       proposedAmount:  proposedNum,
       reason,
       context,
@@ -141,13 +156,31 @@ export default function ReductionModal({
                 Our team will review and respond within 1 business day.
               </div>
 
+              {/* Multi-clinic picker */}
+              {isMultiClinic && (
+                <div className="wiz-field">
+                  <label className="wiz-label">Clinic</label>
+                  <select
+                    className="wiz-select"
+                    value={pickedId}
+                    onChange={e => { setPickedId(e.target.value); setProposed(""); setAmtError(""); }}
+                  >
+                    {caseClinics.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.clinic} — {usd(c.bill)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Current lien info (read-only) */}
               <div>
                 <div className="ap-split-label">Current Lien Info</div>
                 <div className="ap-info-grid">
                   {[
-                    ["Bill Amount",              usd(bill)],
-                    [`LienCo Share (${split}%)`,    usd(lienCoAmt)],
+                    ["Bill Amount",                    usd(activeBill)],
+                    [`LienCo Share (${activeSplit}%)`, usd(lienCoAmt)],
                     [`Clinic Share (${clinicShare}%)`, usd(clinicAmt)],
                   ].map(([label, value]) => (
                     <div key={label} className="ap-info-row">
@@ -167,7 +200,7 @@ export default function ReductionModal({
                   value={proposed}
                   onChange={e => { setProposed(e.target.value); setAmtError(""); }}
                   onBlur={validateAmt}
-                  placeholder={`Less than ${usd(bill)}`}
+                  placeholder={`Less than ${usd(activeBill)}`}
                 />
                 {amtError && <span className="rm-err-msg">{amtError}</span>}
               </div>
@@ -177,8 +210,8 @@ export default function ReductionModal({
                 <div className="rm-preview-card">
                   <div className="ap-split-label">Reduction Preview</div>
                   {[
-                    [`New LienCo Share (${split}%)`,    usd(newLienCoAmt), false],
-                    [`New Clinic Share (${clinicShare}%)`, usd(newClinicAmt), false],
+                    [`New LienCo Share (${activeSplit}%)`, usd(newLienCoAmt), false],
+                    [`New Clinic Share (${clinicShare}%)`,  usd(newClinicAmt), false],
                     ["Total Reduction", `${usd(reduction)} (${reductionPct}% reduction)`, true],
                   ].map(([label, value, amber]) => (
                     <div key={label} className="ap-info-row">

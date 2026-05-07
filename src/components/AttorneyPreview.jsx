@@ -266,7 +266,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
     }
     setTxHashes(hashes);
     setPhase("done");
-    onSettled?.(caseId, caseClinics.map(c => c.id));
+    onSettled?.(caseId, caseClinics.map(c => c.id), hashes);
   }
 
   const EXPLORER = "https://testnet.xrpl.org/transactions/";
@@ -547,10 +547,11 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled }) {
       {showReduction && (
         <ReductionModal
           caseId={selectedCaseId}
-          clinicLienId={isMulti ? selectedCaseId : lien.id}
-          clinicName={isMulti ? `${caseClinics.length} clinics` : lien.clinic}
-          bill={totalBill}
-          split={lien.split}
+          caseClinics={isMulti ? caseClinics : null}
+          clinicLienId={isMulti ? null : lien.id}
+          clinicName={isMulti ? null : lien.clinic}
+          bill={isMulti ? null : lien.bill}
+          split={isMulti ? null : (lien.split ?? 70)}
           onClose={() => setShowReduction(false)}
           onSubmitted={(id) => {
             setReductions(loadReductionRequests());

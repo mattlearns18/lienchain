@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
-import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase } from "./lib/store.js";
+import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase, loadReductionRequests, saveReductionRequests } from "./lib/store.js";
 import IntakeWizard from "./components/IntakeWizard.jsx";
 import AttorneyPreview from "./components/AttorneyPreview.jsx";
 import "./Dashboard.css";
@@ -401,13 +401,38 @@ export default function Dashboard() {
     setActiveTab("attorney");
   };
 
-  // Called by AttorneyPreview when a settlement completes — marks all clinic liens Settled
-  const handleSettled = (caseId, lienIds) => {
+  // Called by AttorneyPreview when a settlement completes.
+  // lienIds: string[]  — all clinic lien IDs on the case
+  // hashes:  string[]  — one TX hash per clinic, parallel-indexed with lienIds
+  const handleSettled = (caseId, lienIds, hashes = []) => {
+    // 1 + 2 — flip lien statuses to Settled; write settlement hash into tx2
     setLiens(prev => {
-      const updated = prev.map(l =>
-        lienIds.includes(l.id) ? { ...l, status: "Settled" } : l
-      );
+      const updated = prev.map(l => {
+        const idx = lienIds.indexOf(l.id);
+        if (idx === -1) return l;
+        return { ...l, status: "Settled", tx2: hashes[idx] ?? l.tx2 ?? null };
+      });
       saveLiens(updated, SEED_IDS);
+      return updated;
+    });
+
+    // 3 — flip any open reduction requests on this case to "accepted"
+    const allRequests = loadReductionRequests();
+    const anyOpen = allRequests.some(r => r.caseId === caseId && r.status === "open");
+    if (anyOpen) {
+      const updated = allRequests.map(r =>
+        r.caseId === caseId && r.status === "open" ? { ...r, status: "accepted" } : r
+      );
+      saveReductionRequests(updated);
+    }
+
+    // 1 — roll case status up to Settled when all its clinic liens are now settled
+    setCases(prev => {
+      const updated = prev.map(c => {
+        if (c.caseId !== caseId) return c;
+        return { ...c, status: "Settled" };
+      });
+      saveCases(updated);
       return updated;
     });
   };
