@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import ReductionModal from "../components/ReductionModal.jsx";
 import { MARKET_INFO } from "../lib/markets.js";
+import { calcWaterfall } from "../lib/waterfall.js";
 
 const C = {
   bg: "#06090f",
@@ -76,25 +77,33 @@ function InfoRow({ label, value, valueColor }) {
 }
 
 // ── WaterfallSection (inline-styled, matches AttorneyPortal's design palette) ─
-function WaterfallSection({ bill, lienCoShare, clinicShare, onWaterfallChange }) {
+function WaterfallSection({ clinics, onWaterfallChange }) {
   const [gross,      setGross]      = useState(String(MOCK_CASE.expectedSettlement));
   const [attyFeePct, setAttyFeePct] = useState(33);
   const [costs,      setCosts]      = useState("");
 
-  const grossNum    = parseFloat(gross)  || 0;
-  const costsNum    = parseFloat(costs)  || 0;
-  const attyFeeAmt  = Math.round(grossNum * attyFeePct / 100);
-  const netAvailable  = grossNum - attyFeeAmt - costsNum;
-  const onChainAmount = Math.min(bill, Math.max(0, netAvailable));
-  const lienCoAmt     = onChainAmount * lienCoShare / 100;
-  const clinicAmt     = onChainAmount * clinicShare / 100;
-  const patientNet    = netAvailable - onChainAmount;
+  const clinicFloorPct = MARKET_INFO.IN?.policy?.clinicFloorPct ?? 0.20;
+
+  const grossNum     = parseFloat(gross) || 0;
+  const costsNum     = parseFloat(costs) || 0;
+  const attyFeeAmt   = Math.round(grossNum * attyFeePct / 100);
+  const netAvailable = grossNum - attyFeeAmt - costsNum;
+
+  const result = calcWaterfall(Math.max(0, netAvailable), clinics, clinicFloorPct);
+  const { clinicRows, floorAppliedCount, poolExhausted, patientNet, onChainTotal, totalLienCo, totalClinic, totalBills } = result;
 
   const isNetNeg     = netAvailable < 0;
-  const isPatientNeg = patientNet < 0 && !isNetNeg;
+  const isPatientNeg = !isNetNeg && netAvailable > 0 && patientNet <= 0 && netAvailable < totalBills;
 
   useEffect(() => {
-    onWaterfallChange({ grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable, onChainAmount, lienCoAmt, clinicAmt, patientNet });
+    onWaterfallChange({
+      grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable,
+      onChainAmount: onChainTotal,
+      lienCoAmt: totalLienCo,
+      clinicAmt: totalClinic,
+      patientNet,
+      ...result,
+    });
   }, [grossNum, attyFeePct, costsNum]);
 
   const card = { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "28px 32px", marginBottom: 24 };
@@ -105,6 +114,16 @@ function WaterfallSection({ bill, lienCoShare, clinicShare, onWaterfallChange })
   const divider = { height: 1, background: C.border, margin: "8px 0" };
   const row = { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", fontSize: 14 };
   const indented = { paddingLeft: 18, fontSize: 13 };
+
+  // Conditional pro-rata note (per handoff spec)
+  let proRataNote = null;
+  if (poolExhausted) {
+    proRataNote = `Pro-rata distribution applied with Indiana 20% clinic floor enforcement. Pool exhausted — some clinics receive less than statutory floor.`;
+  } else if (floorAppliedCount > 0) {
+    proRataNote = `Pro-rata distribution applied with Indiana 20% clinic floor enforcement. ${floorAppliedCount} IN clinic(s) raised to floor; remaining net pool re-distributed pro-rata.`;
+  } else if (netAvailable > 0 && netAvailable < totalBills) {
+    proRataNote = `Pro-rata distribution applied — net pool insufficient to cover all bills in full.`;
+  }
 
   return (
     <div style={card}>
@@ -166,14 +185,32 @@ function WaterfallSection({ bill, lienCoShare, clinicShare, onWaterfallChange })
           </span>
         </div>
         <div style={divider} />
-        <div style={row}>
-          <span style={{ ...indented, color: C.teal }}>LienCo ({lienCoShare}%)</span>
-          <span style={{ color: C.teal, fontWeight: 600 }}>{fmt(lienCoAmt)}</span>
-        </div>
-        <div style={row}>
-          <span style={{ ...indented, color: C.green }}>Clinic ({clinicShare}%)</span>
-          <span style={{ color: C.green, fontWeight: 600 }}>{fmt(clinicAmt)}</span>
-        </div>
+
+        {/* Per-clinic rows */}
+        {clinicRows.map(cr => (
+          <div key={cr.id}>
+            <div style={{ ...row, alignItems: "center" }}>
+              <span style={{ ...indented, color: C.text, fontWeight: 500 }}>{cr.clinic}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: C.teal, fontWeight: 600 }}>{fmt(cr.recovery)}</span>
+                {cr.floorApplied && (
+                  <span style={{ fontSize: "0.62rem", fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.35)", color: C.amber, whiteSpace: "nowrap" }}>
+                    FLOOR APPLIED
+                  </span>
+                )}
+              </span>
+            </div>
+            <div style={{ ...row, fontSize: 12 }}>
+              <span style={{ paddingLeft: 32, color: C.dim }}>LienCo ({cr.split}%)</span>
+              <span style={{ color: C.teal }}>{fmt(cr.lienCoAmt)}</span>
+            </div>
+            <div style={{ ...row, fontSize: 12 }}>
+              <span style={{ paddingLeft: 32, color: C.dim }}>Clinic ({100 - cr.split}%)</span>
+              <span style={{ color: C.green }}>{fmt(cr.clinicAmt)}</span>
+            </div>
+          </div>
+        ))}
+
         <div style={divider} />
         <div style={row}>
           <span style={{ color: C.white, fontWeight: 600 }}>Patient Net Recovery</span>
@@ -182,6 +219,13 @@ function WaterfallSection({ bill, lienCoShare, clinicShare, onWaterfallChange })
           </span>
         </div>
       </div>
+
+      {/* Pro-rata / floor note */}
+      {proRataNote && (
+        <div style={{ marginTop: 10, fontSize: 12, color: C.dim, lineHeight: 1.5, fontStyle: "italic" }}>
+          {proRataNote}
+        </div>
+      )}
 
       {/* Warnings */}
       {isNetNeg && (
@@ -498,9 +542,7 @@ export default function AttorneyPortal() {
 
             {/* Settlement Waterfall — above the split visual */}
             <WaterfallSection
-              bill={caseData.billAmount}
-              lienCoShare={caseData.lienCoShare}
-              clinicShare={caseData.clinicShare}
+              clinics={[{ id: caseData.caseId, clinic: caseData.clinic, bill: caseData.billAmount, split: caseData.lienCoShare, market: caseData.market }]}
               onWaterfallChange={setWaterfall}
             />
 
