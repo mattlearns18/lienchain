@@ -194,6 +194,7 @@
 .ap-wf-clinic-totals .ap-wf-clinic-lco { color: var(--accent); }
 .ap-wf-clinic-totals .ap-wf-clinic-cli { color: var(--green); }
 .ap-wf-prorata-note  { font-size: 0.73rem; color: var(--muted); font-style: italic; padding: 4px 4px 0; }
+.ap-wf-floor-tag { display: inline-block; margin-left: 5px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.4px; padding: 1px 5px; border-radius: 3px; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.35); color: #fbbf24; vertical-align: middle; }
 
 /* ── Waterfall card ─────────────────────────────────────────────────────────── */
 .ap-waterfall-card {
