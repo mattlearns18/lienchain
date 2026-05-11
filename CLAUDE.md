@@ -81,7 +81,7 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 ## 6. Current State
 
-**Phase 3, Phase 4, and Phase 5 are complete.**
+**Phase 3, Phase 4, Phase 5, and Phase 6 are complete.**
 
 *Phase 3* — real XRPL tokenization on the live site. Intake wizard mints a real testnet MPT, the dashboard reads it back, the attorney preview animates the 4-step settlement and flags compliance issues correctly across all five markets. `phase1-proof.md` documents the testnet settlement proofs (TX 72%, NV 65%, IN 70% LienCo splits) with verifiable XRPL Explorer links.
 
@@ -89,7 +89,9 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 *Phase 5* — Multi-clinic cases with shared reductions. A single PI case now groups N clinic liens under a parent `Case` record. The intake wizard supports "Add clinic to existing case" with attorney + treatment fields inherited as read-only. The waterfall distributes net-available **pro-rata** across all clinics on a case (with a totals row + pro-rata note when net pool falls short of total bills). The Liens tab groups multi-clinic cases under expandable parent rows with weighted-avg split bars; market filters ungroup cases to show only the matching clinic when filtered to a single state. Reduction requests are stored at the case level and visible to every clinic on the case. Settlement execution runs one TX per clinic in sequence. State persists across reloads via localStorage; legacy single-clinic liens carried forward via a `caseId = lien.id` back-compat shim. Spec at `phase5-plan.md`.
 
-**Next queued build: TBD.** Phase 5 was the queued item. Candidates for the next planning session: per-state config refactor (the `MARKETS` / `MARKET_INFO` extraction called out in §4), secondary-market bid UI, attorney provisioning / invite flow, portfolio analytics, mainnet readiness work, or per-state lien-priority rules in the waterfall (TX hospital lien priority, IN cascading 20% floor) which Phase 5 deferred. Decide with Matt before committing to one.
+*Phase 6* — Per-state lien priority rules. Three commits. (1) `MARKETS` / `MARKET_INFO` centralized into `src/lib/markets.js` as a single source of truth, with policy fields per state. (2) Indiana 20% clinic floor enforced in the settlement waterfall via `src/lib/waterfall.js` (`calcWaterfall`): pro-rata first, then any IN clinic where pro-rata fell below `bill × 0.20` is raised to floor, with the remaining pool re-distributed pro-rata across non-fixed clinics. Iterative — multiple IN clinics resolved largest-gap-first until convergence or pool exhaustion. Mixed cases protect only the IN clinics; non-IN absorb the haircut. Display: `FLOOR` tag on raised rows, conditional note below the table covering pure-pro-rata, floor-applied, and pool-exhausted cases. (3) Texas hospital lien priority warning banner on any case with ≥1 TX clinic — banner-only, math stays pro-rata for TX (real priority enforcement deferred pending attorney opinion letter). Spec at `phase6-plan.md`. Switch to handoff-file pattern (`.cowork-handoff.md` per commit) started this phase.
+
+**Next queued build: Phase 7 — Portfolio analytics dashboard.** Per Matt's sequencing after Phase 6: total deployed capital, recovery rate, average days-to-settle, exposure by market/state, aging buckets, top-performing markets. Read-only over existing data, no new minting flows. Pitch-deck-ready metrics for board updates and investor conversations. After Phase 7 the sequence is: Phase 8 attorney provisioning / invite flow, Phase 9 mainnet-readiness (gated by business gaps in §7).
 
 ## 7. Business Gaps Still Open
 
