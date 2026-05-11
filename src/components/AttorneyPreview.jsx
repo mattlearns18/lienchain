@@ -690,6 +690,13 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled }) {
         </div>
       </div>
 
+      {/* TX hospital lien priority warning — any case with ≥1 TX clinic */}
+      {caseClinics.some(c => c.market === "TX") && MARKET_INFO.TX?.policy?.priorityWarning && (
+        <div className="ap-flag-banner ap-flag-orange">
+          ⚠ <strong>Texas Hospital Lien Priority Advisory</strong> — {MARKET_INFO.TX.policy.priorityWarning}
+        </div>
+      )}
+
       {/* Waterfall — multi-clinic aware */}
       <WaterfallCard
         key={selectedCaseId}
