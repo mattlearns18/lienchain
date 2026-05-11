@@ -345,7 +345,12 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
     }
     setTxHashes(hashes);
     setPhase("done");
-    onSettled?.(caseId, caseClinics.map(c => c.id), hashes);
+    // Pass per-clinic LienCo recovery amounts so Dashboard can persist lien.recovery
+    const recoveries = caseClinics.map(c => {
+      const row = waterfall?.clinicRows?.find(r => r.id === c.id);
+      return row?.lienCoAmt ?? 0;
+    });
+    onSettled?.(caseId, caseClinics.map(c => c.id), hashes, recoveries);
   }
 
   const EXPLORER = "https://testnet.xrpl.org/transactions/";

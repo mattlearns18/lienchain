@@ -31,10 +31,13 @@
 .db-flag-alert span { color: var(--muted); }
 
 /* Stats */
-.db-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 36px; }
-.db-stat-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; }
-.db-stat-val { display: block; font-size: 1.8rem; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
-.db-stat-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.db-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.db-kpi-tile { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; }
+.db-kpi-title { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; }
+.db-kpi-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: var(--text); margin-bottom: 0.25rem; }
+.db-kpi-sub { font-size: 0.75rem; color: var(--muted); }
+.db-kpi-delta-up   { color: var(--green); }
+.db-kpi-delta-down { color: #f87171; }
 
 /* Sections */
 .db-section { margin-bottom: 40px; }

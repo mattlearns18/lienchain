@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
 import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase, loadReductionRequests, saveReductionRequests } from "./lib/store.js";
@@ -339,6 +339,31 @@ function ComplianceStateCard({ code, info, liens }) {
 // Seed IDs — used by the store to distinguish historical liens from user-created ones
 const SEED_IDS = new Set(SETTLEMENTS.map(l => l.id));
 
+// ── Analytics helpers ────────────────────────────────────────────────────────
+// approxSettledAt: legacy liens have no settledAt; use ts + 6 months as a
+// rough placeholder for a typical PI timeline. This is an estimate only —
+// do not use for legal or financial reporting.
+function approxSettledAt(lien) {
+  const d = new Date(lien.ts);
+  d.setMonth(d.getMonth() + 6);
+  return d.toISOString();
+}
+
+// Enriches a lien with derived analytics fields.
+// recovery and settledAt are written on fresh settlements (handleSettled).
+// For legacy/mock liens that predate these fields, fall back to estimates:
+//   recovery  → bill × split/100  (LienCo nominal share at face value)
+//   settledAt → ts + 6 months     (rough midpoint for a typical PI timeline)
+// purchasePrice → bill × 0.78 if not recorded (typical discount estimate)
+// These defaults are clearly estimates — tag any real reporting accordingly.
+function deriveLienAnalytics(lien) {
+  const isSettled     = lien.status === "Settled";
+  const purchasePrice = lien.purchasePrice ?? Math.round(lien.bill * 0.78);
+  const recovery      = lien.recovery ?? (isSettled ? Math.round(lien.bill * (lien.split ?? 70) / 100) : null);
+  const settledAt     = lien.settledAt ?? (isSettled ? approxSettledAt(lien) : null);
+  return { ...lien, purchasePrice, recovery, settledAt };
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [wallets,       setWallets]       = useState(WALLETS.map(w => ({ ...w, balance: null })));
@@ -385,21 +410,63 @@ export default function Dashboard() {
     ? Math.round(filteredLiens.reduce((s, r) => s + r.split, 0) / filteredLiens.length)
     : 0;
 
+  // Single-pass analytics derivation for all 6 KPI tiles.
+  // Recomputed whenever liens or cases change. Reused in Commit 2 (charts + aging).
+  const analytics = useMemo(() => {
+    const enriched     = liens.map(deriveLienAnalytics);
+    const activeLiens  = enriched.filter(l => l.status === "Active");
+    const settledLiens = enriched.filter(l => l.status === "Settled");
+
+    const totalDeployed = enriched.reduce((s, l) => s + (l.purchasePrice ?? 0), 0);
+    const totalAtRisk   = activeLiens.reduce((s, l) => s + l.bill, 0);
+
+    const recoverySum  = settledLiens.reduce((s, l) => s + (l.recovery ?? 0), 0);
+    const purchaseSum  = settledLiens.reduce((s, l) => s + (l.purchasePrice ?? 0), 0);
+    const recoveryRate = purchaseSum > 0 ? (recoverySum / purchaseSum) * 100 : null;
+
+    const avgDaysToSettle = settledLiens.length === 0 ? null :
+      settledLiens.reduce((s, l) => {
+        const days = (new Date(l.settledAt) - new Date(l.ts)) / 86400000;
+        return s + Math.max(0, days);
+      }, 0) / settledLiens.length;
+
+    const activeCases  = cases.filter(c => c.status === "Active");
+    const settledCases = cases.filter(c => c.status === "Settled");
+
+    return {
+      totalDeployed,
+      totalAtRisk,
+      recoveryRate,
+      avgDaysToSettle,
+      activeCases:  { count: activeCases.length,  lienCount: activeLiens.length },
+      settledCases: { count: settledCases.length, recoverySum },
+      counts: { all: enriched.length, active: activeLiens.length, settled: settledLiens.length },
+    };
+  }, [liens, cases]);
+
   const handlePreview = (caseId) => {
     setPreviewCaseId(caseId);
     setActiveTab("attorney");
   };
 
   // Called by AttorneyPreview when a settlement completes.
-  // lienIds: string[]  — all clinic lien IDs on the case
-  // hashes:  string[]  — one TX hash per clinic, parallel-indexed with lienIds
-  const handleSettled = (caseId, lienIds, hashes = []) => {
-    // 1 + 2 — flip lien statuses to Settled; write settlement hash into tx2
+  // lienIds:    string[]  — all clinic lien IDs on the case
+  // hashes:     string[]  — one TX hash per clinic, parallel-indexed with lienIds
+  // recoveries: number[]  — per-clinic LienCo recovery amount from calcWaterfall
+  const handleSettled = (caseId, lienIds, hashes = [], recoveries = []) => {
+    const settledAt = new Date().toISOString();
+    // 1 + 2 — flip lien statuses to Settled; write tx2, recovery, and settledAt
     setLiens(prev => {
       const updated = prev.map(l => {
         const idx = lienIds.indexOf(l.id);
         if (idx === -1) return l;
-        return { ...l, status: "Settled", tx2: hashes[idx] ?? l.tx2 ?? null };
+        return {
+          ...l,
+          status:    "Settled",
+          tx2:       hashes[idx] ?? l.tx2 ?? null,
+          recovery:  recoveries[idx] ?? null,       // LienCo dollar share from waterfall
+          settledAt: l.settledAt ?? settledAt,       // don't overwrite if already set
+        };
       });
       saveLiens(updated, SEED_IDS);
       return updated;
@@ -507,19 +574,49 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* STATS */}
-          <div className="db-stats">
-            {[
-              { label: "Total Volume",     value: usd(totalVolume) },
-              { label: "Liens Settled",    value: settledLiens.length },
-              { label: "Markets Active",   value: new Set(filteredLiens.map(r => r.market)).size },
-              { label: "Avg LienCo Split", value: `${avgSplit}%` },
-            ].map(({ label, value }) => (
-              <div className="db-stat-card" key={label}>
-                <span className="db-stat-val">{value}</span>
-                <span className="db-stat-label">{label}</span>
+          {/* KPI TILES */}
+          <div className="db-kpi-row">
+            <div className="db-kpi-tile">
+              <div className="db-kpi-title">Total Deployed Capital</div>
+              <div className="db-kpi-value">{usd(analytics.totalDeployed)}</div>
+              <div className="db-kpi-sub">across {analytics.counts.all} liens</div>
+            </div>
+            <div className="db-kpi-tile">
+              <div className="db-kpi-title">Total At-Risk Exposure</div>
+              <div className="db-kpi-value">{usd(analytics.totalAtRisk)}</div>
+              <div className="db-kpi-sub">{analytics.counts.active} active liens</div>
+            </div>
+            <div className="db-kpi-tile">
+              <div className="db-kpi-title">Recovery Rate</div>
+              <div className="db-kpi-value">
+                {analytics.recoveryRate === null ? "—" : (
+                  <>
+                    <span className={analytics.recoveryRate >= 100 ? "db-kpi-delta-up" : "db-kpi-delta-down"}>
+                      {analytics.recoveryRate >= 100 ? "↑" : "↓"}
+                    </span>
+                    {" "}{analytics.recoveryRate.toFixed(1)}%
+                  </>
+                )}
               </div>
-            ))}
+              <div className="db-kpi-sub">lifetime · {analytics.counts.settled} settled</div>
+            </div>
+            <div className="db-kpi-tile">
+              <div className="db-kpi-title">Avg Days to Settle</div>
+              <div className="db-kpi-value">
+                {analytics.avgDaysToSettle === null ? "—" : `${Math.round(analytics.avgDaysToSettle)} days`}
+              </div>
+              <div className="db-kpi-sub">{analytics.counts.settled} settled liens</div>
+            </div>
+            <div className="db-kpi-tile">
+              <div className="db-kpi-title">Active Cases</div>
+              <div className="db-kpi-value">{analytics.activeCases.count}</div>
+              <div className="db-kpi-sub">· {analytics.activeCases.lienCount} clinic liens</div>
+            </div>
+            <div className="db-kpi-tile">
+              <div className="db-kpi-title">Settled Cases</div>
+              <div className="db-kpi-value">{analytics.settledCases.count}</div>
+              <div className="db-kpi-sub">{usd(analytics.settledCases.recoverySum)} recovered</div>
+            </div>
           </div>
 
           {/* WALLET PANEL — always full 6-wallet panel regardless of market filter */}
