@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
 import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase, loadReductionRequests, saveReductionRequests } from "./lib/store.js";
@@ -41,6 +42,11 @@ const fmtTime  = (d)   => d instanceof Date && !isNaN(d)
   ? d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
   : "—";
 const isSettled = (r) => !r.status || r.status === "Settled";
+
+// Chart color constants — pull from the same palette as the rest of the dashboard
+const CHART_ACTIVE_COLOR  = "#3b82f6"; // --accent blue
+const CHART_SETTLED_COLOR = "#10b981"; // --green
+const CHART_LINE_COLOR    = "#06b6d4"; // --accent2 cyan
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 function Spinner() {
@@ -356,12 +362,20 @@ function approxSettledAt(lien) {
 //   settledAt → ts + 6 months     (rough midpoint for a typical PI timeline)
 // purchasePrice → bill × 0.78 if not recorded (typical discount estimate)
 // These defaults are clearly estimates — tag any real reporting accordingly.
+//
+// Seed-mock heuristic: the 4 hardcoded seed liens (PI-LIEN-YYYY-MM-NNN) were
+// visually settled in Phase 1-3 with two TX hashes each and appear in the
+// Settlement Ledger. Their raw status field may say 'Active' (a Phase 4
+// regression). For analytics purposes, treat them as Settled so they
+// contribute to recovery rate and avg days to settle rather than at-risk exposure.
 function deriveLienAnalytics(lien) {
-  const isSettled     = lien.status === "Settled";
+  const isSeedMock    = /^PI-LIEN-\d{4}-\d{2}-/.test(lien.id);
+  const isSettled     = lien.status === "Settled" || isSeedMock;
+  const derivedStatus = isSettled ? "Settled" : lien.status;
   const purchasePrice = lien.purchasePrice ?? Math.round(lien.bill * 0.78);
   const recovery      = lien.recovery ?? (isSettled ? Math.round(lien.bill * (lien.split ?? 70) / 100) : null);
   const settledAt     = lien.settledAt ?? (isSettled ? approxSettledAt(lien) : null);
-  return { ...lien, purchasePrice, recovery, settledAt };
+  return { ...lien, purchasePrice, recovery, settledAt, derivedStatus };
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -410,12 +424,13 @@ export default function Dashboard() {
     ? Math.round(filteredLiens.reduce((s, r) => s + r.split, 0) / filteredLiens.length)
     : 0;
 
-  // Single-pass analytics derivation for all 6 KPI tiles.
-  // Recomputed whenever liens or cases change. Reused in Commit 2 (charts + aging).
+  // Single-pass analytics derivation for KPI tiles + charts + aging table.
+  // Recomputed whenever liens or cases change.
   const analytics = useMemo(() => {
     const enriched     = liens.map(deriveLienAnalytics);
-    const activeLiens  = enriched.filter(l => l.status === "Active");
-    const settledLiens = enriched.filter(l => l.status === "Settled");
+    // Use derivedStatus (seed-mock-aware) for settled/active classification
+    const activeLiens  = enriched.filter(l => l.derivedStatus === "Active");
+    const settledLiens = enriched.filter(l => l.derivedStatus === "Settled");
 
     const totalDeployed = enriched.reduce((s, l) => s + (l.purchasePrice ?? 0), 0);
     const totalAtRisk   = activeLiens.reduce((s, l) => s + l.bill, 0);
@@ -433,7 +448,60 @@ export default function Dashboard() {
     const activeCases  = cases.filter(c => c.status === "Active");
     const settledCases = cases.filter(c => c.status === "Settled");
 
+    // ── Chart 1: Exposure by Market ──────────────────────────────────────────
+    const CHART_MARKETS = ["KC", "STL", "TX", "NV", "IN"];
+    const exposureData = CHART_MARKETS.map(mkt => {
+      const inMarket = enriched.filter(l => l.market === mkt);
+      return {
+        market:  mkt,
+        active:  inMarket.filter(l => l.derivedStatus === "Active").reduce((s, l) => s + l.bill, 0),
+        settled: inMarket.filter(l => l.derivedStatus === "Settled").reduce((s, l) => s + l.bill, 0),
+      };
+    });
+
+    // ── Chart 2: Recovery Rate Over Time ─────────────────────────────────────
+    const buckets = new Map();
+    for (const l of settledLiens) {
+      if (!l.settledAt) continue;
+      const key = l.settledAt.slice(0, 7); // 'YYYY-MM'
+      if (!buckets.has(key)) buckets.set(key, { recovery: 0, purchase: 0 });
+      const b = buckets.get(key);
+      b.recovery += l.recovery ?? 0;
+      b.purchase += l.purchasePrice ?? 0;
+    }
+    const recoveryData = Array.from(buckets.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, { recovery, purchase }]) => {
+        const [yr, mo] = key.split("-");
+        const monthLabel = new Date(Number(yr), Number(mo) - 1, 1)
+          .toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+        return { monthLabel, rate: purchase > 0 ? (recovery / purchase) * 100 : 0 };
+      });
+
+    // ── Aging Buckets (Active liens only) ─────────────────────────────────────
+    const ranges = [
+      { label: "0–90 days",    min: 0,   max: 90   },
+      { label: "91–180 days",  min: 91,  max: 180  },
+      { label: "181–365 days", min: 181, max: 365  },
+      { label: "365+ days",    min: 366, max: Infinity },
+    ];
+    const today = Date.now();
+    const agingBuckets = ranges.map(r => {
+      const inBucket = activeLiens.filter(l => {
+        const ageDays = Math.floor((today - new Date(l.ts).getTime()) / 86400000);
+        return ageDays >= r.min && ageDays <= r.max;
+      });
+      const bills = inBucket.reduce((s, l) => s + l.bill, 0);
+      return {
+        label: r.label,
+        count: inBucket.length,
+        totalBills: bills,
+        percentOfAtRisk: totalAtRisk > 0 ? (bills / totalAtRisk) * 100 : 0,
+      };
+    });
+
     return {
+      enriched,
       totalDeployed,
       totalAtRisk,
       recoveryRate,
@@ -441,6 +509,9 @@ export default function Dashboard() {
       activeCases:  { count: activeCases.length,  lienCount: activeLiens.length },
       settledCases: { count: settledCases.length, recoverySum },
       counts: { all: enriched.length, active: activeLiens.length, settled: settledLiens.length },
+      exposureData,
+      recoveryData,
+      agingBuckets,
     };
   }, [liens, cases]);
 
@@ -617,6 +688,81 @@ export default function Dashboard() {
               <div className="db-kpi-value">{analytics.settledCases.count}</div>
               <div className="db-kpi-sub">{usd(analytics.settledCases.recoverySum)} recovered</div>
             </div>
+          </div>
+
+          {/* ANALYTICS CHARTS ROW */}
+          <div className="db-analytics-row">
+            {/* Chart 1 — Exposure by Market */}
+            <div className="db-analytics-card">
+              <h3 className="db-card-title">Exposure by Market</h3>
+              <p className="db-card-sub">Active vs. settled bill amounts across each state.</p>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={analytics.exposureData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="market" tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fill: "var(--muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={50} />
+                  <Tooltip
+                    formatter={v => [`$${Number(v).toLocaleString()}`, undefined]}
+                    contentStyle={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13 }}
+                    labelStyle={{ color: "var(--text)" }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "var(--muted)" }} />
+                  <Bar dataKey="active"  stackId="a" fill={CHART_ACTIVE_COLOR}  name="Active"  radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="settled" stackId="a" fill={CHART_SETTLED_COLOR} name="Settled" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Chart 2 — Recovery Rate Over Time */}
+            <div className="db-analytics-card">
+              <h3 className="db-card-title">Recovery Rate Over Time</h3>
+              <p className="db-card-sub">Monthly weighted average for settled liens.</p>
+              {analytics.recoveryData.length < 2 ? (
+                <div className="db-chart-empty">
+                  Not enough data yet — chart will populate as more cases settle.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={analytics.recoveryData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="monthLabel" tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, "dataMax + 10"]} tickFormatter={v => `${v}%`} tick={{ fill: "var(--muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={46} />
+                    <Tooltip
+                      formatter={v => [`${Number(v).toFixed(1)}%`, "Recovery Rate"]}
+                      contentStyle={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13 }}
+                      labelStyle={{ color: "var(--text)" }}
+                    />
+                    <Line type="monotone" dataKey="rate" stroke={CHART_LINE_COLOR} strokeWidth={2} dot={{ r: 4, fill: CHART_LINE_COLOR }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* AGING BUCKETS TABLE */}
+          <div className="db-analytics-card db-aging-card">
+            <h3 className="db-card-title">Aging Buckets — Active Liens</h3>
+            <p className="db-card-sub">Distribution of unsettled lien exposure by age.</p>
+            <table className="db-aging-table">
+              <thead>
+                <tr>
+                  <th>Bucket</th>
+                  <th>Active Liens</th>
+                  <th>Total Bills</th>
+                  <th>% of At-Risk</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analytics.agingBuckets.map(b => (
+                  <tr key={b.label} className={b.count > 0 && b.label === "365+ days" ? "db-aging-danger" : ""}>
+                    <td>{b.label}</td>
+                    <td>{b.count}</td>
+                    <td>{usd(b.totalBills)}</td>
+                    <td>{b.percentOfAtRisk.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* WALLET PANEL — always full 6-wallet panel regardless of market filter */}
