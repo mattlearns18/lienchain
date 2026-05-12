@@ -567,7 +567,7 @@ function CaseReductionsPanel({ caseId, reductions }) {
 }
 
 // ── Main exported component ───────────────────────────────────────────────────
-export default function AttorneyPreview({ liens, initialCaseId, onSettled }) {
+export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases, onInvite }) {
   // Group liens by caseId so multi-clinic cases show as one entry
   const caseMap = {};
   for (const l of liens) {
@@ -694,6 +694,17 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled }) {
           ))}
         </div>
       </div>
+
+      {/* Invite Attorney button — shown above the waterfall */}
+      {onInvite && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button className="db-btn-secondary" onClick={() => onInvite(selectedCaseId)}>
+            {cases?.find(c => c.caseId === selectedCaseId)?.attorneyAssignment
+              ? "Manage Invite"
+              : "Invite Attorney"}
+          </button>
+        </div>
+      )}
 
       {/* TX hospital lien priority warning — any case with ≥1 TX clinic */}
       {caseClinics.some(c => c.market === "TX") && MARKET_INFO.TX?.policy?.priorityWarning && (

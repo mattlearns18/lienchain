@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Link } from "react-router-dom";
 import { getWalletBalances, getAllMarketActivity } from "./lib/xrpl-data.js";
-import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase, loadReductionRequests, saveReductionRequests } from "./lib/store.js";
+import { loadLiens, saveLiens, loadCases, saveCases, createCaseForLien, upsertCase, loadReductionRequests, saveReductionRequests, loadAttorneys, saveAttorneys, genAttorneyId } from "./lib/store.js";
 import IntakeWizard from "./components/IntakeWizard.jsx";
 import AttorneyPreview from "./components/AttorneyPreview.jsx";
 import "./Dashboard.css";
@@ -105,7 +105,7 @@ function StatusCell({ status }) {
 }
 
 // ── CaseGroupRow — one parent row per case, optional child rows per clinic ───
-function CaseGroupRow({ caseId, clinics, onPreview }) {
+function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite }) {
   const [open, setOpen] = useState(false);
   const isMulti = clinics.length > 1;
 
@@ -149,6 +149,11 @@ function CaseGroupRow({ caseId, clinics, onPreview }) {
               </button>
             )}
             <span>{caseId}</span>
+            {caseObj?.attorneyAssignment?.acceptedAt
+              ? <span className="db-invite-badge db-invite-accepted">Accepted</span>
+              : caseObj?.attorneyAssignment?.sentAt
+              ? <span className="db-invite-badge db-invite-invited">Invited</span>
+              : null}
             {isMulti && (
               <span className="db-clinics-badge">{clinics.length} clinics</span>
             )}
@@ -181,8 +186,13 @@ function CaseGroupRow({ caseId, clinics, onPreview }) {
             ? <a href={EXPLORER + single.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(single.tx2)}</a>
             : <span className="db-muted">—</span>}
         </td>
-        <td>
+        <td style={{ whiteSpace: "nowrap" }}>
           <button className="db-preview-btn" onClick={() => onPreview(caseId)}>Attorney View →</button>
+          {onInvite && (
+            <button className="db-btn-secondary db-invite-btn" onClick={() => onInvite(caseId)}>
+              {caseObj?.attorneyAssignment ? "Manage Invite" : "Invite Attorney"}
+            </button>
+          )}
         </td>
       </tr>
 
@@ -220,7 +230,7 @@ function CaseGroupRow({ caseId, clinics, onPreview }) {
 }
 
 // ── CaseLienTable — groups liens by caseId, renders CaseGroupRow per case ────
-function CaseLienTable({ rows, emptyText, onPreview }) {
+function CaseLienTable({ rows, emptyText, onPreview, cases, onInvite }) {
   if (!rows.length) return <div className="db-feed-empty">{emptyText}</div>;
 
   // Group by caseId, preserving insertion order
@@ -256,6 +266,8 @@ function CaseLienTable({ rows, emptyText, onPreview }) {
               caseId={cid}
               clinics={caseMap[cid]}
               onPreview={onPreview}
+              caseObj={cases?.find(c => c.caseId === cid)}
+              onInvite={onInvite}
             />
           ))}
         </tbody>
@@ -345,6 +357,194 @@ function ComplianceStateCard({ code, info, liens }) {
 // Seed IDs — used by the store to distinguish historical liens from user-created ones
 const SEED_IDS = new Set(SETTLEMENTS.map(l => l.id));
 
+// ── AttorneyFormModal — Add / Edit attorney ───────────────────────────────────
+function AttorneyFormModal({ initial, onSave, onClose }) {
+  const isEdit = !!initial?.id;
+  const [name,      setName]      = useState(initial?.name      ?? "");
+  const [firm,      setFirm]      = useState(initial?.firm      ?? "");
+  const [barNumber, setBarNumber] = useState(initial?.barNumber ?? "");
+  const [email,     setEmail]     = useState(initial?.email     ?? "");
+  const [err,       setErr]       = useState("");
+
+  function submit(e) {
+    e.preventDefault();
+    if (!name.trim())  return setErr("Name is required.");
+    if (!firm.trim())  return setErr("Firm is required.");
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setErr("Valid email required.");
+    onSave({
+      id:        initial?.id ?? genAttorneyId(),
+      name:      name.trim(),
+      firm:      firm.trim(),
+      barNumber: barNumber.trim(),
+      email:     email.trim(),
+      addedAt:   initial?.addedAt ?? new Date().toISOString(),
+    });
+    onClose();
+  }
+
+  return (
+    <div className="db-modal-overlay" onClick={onClose}>
+      <div className="db-modal" onClick={e => e.stopPropagation()}>
+        <button className="db-modal-close" onClick={onClose}>×</button>
+        <h3 className="db-modal-title">{isEdit ? "Edit Attorney" : "Add Attorney"}</h3>
+        <form onSubmit={submit} className="db-modal-form">
+          <label className="db-form-label">Name *
+            <input className="db-form-input" value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith, Esq." />
+          </label>
+          <label className="db-form-label">Firm *
+            <input className="db-form-input" value={firm} onChange={e => setFirm(e.target.value)} placeholder="Smith & Associates" />
+          </label>
+          <label className="db-form-label">Bar Number
+            <input className="db-form-input" value={barNumber} onChange={e => setBarNumber(e.target.value)} placeholder="MO-54321 (optional)" />
+          </label>
+          <label className="db-form-label">Email *
+            <input className="db-form-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@smithlaw.com" />
+          </label>
+          {err && <div className="db-form-err">{err}</div>}
+          <div className="db-modal-actions">
+            <button type="button" className="db-btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="db-btn-primary">{isEdit ? "Save" : "Add Attorney"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── InviteModal — generate / view / manage attorney invite for a case ─────────
+function InviteModal({ caseId, cases, attorneys, onWriteAssignment, onAddAttorney, onClose }) {
+  const caseObj     = cases.find(c => c.caseId === caseId);
+  const assignment  = caseObj?.attorneyAssignment ?? null;
+  const assignedAtty = assignment ? attorneys.find(a => a.id === assignment.attorneyId) : null;
+
+  // "pick" view = choose attorney; "sent" view = show generated link
+  const [view,        setView]        = useState(assignment ? "sent" : "pick");
+  const [pickedId,    setPickedId]    = useState(assignment?.attorneyId ?? (attorneys[0]?.id ?? ""));
+  const [copied,      setCopied]      = useState(false);
+  const [showAddAtty, setShowAddAtty] = useState(false);
+
+  const currentAssignment = caseObj?.attorneyAssignment ?? null;
+  const currentAtty       = currentAssignment ? attorneys.find(a => a.id === currentAssignment.attorneyId) : null;
+
+  function generate(attorneyId) {
+    const newAssignment = {
+      attorneyId,
+      token:      crypto.randomUUID(),
+      sentAt:     new Date().toISOString(),
+      acceptedAt: null,
+    };
+    onWriteAssignment(caseId, newAssignment);
+    setView("sent");
+  }
+
+  function resend() {
+    generate(currentAssignment.attorneyId);
+  }
+
+  function reassign() {
+    setPickedId(attorneys[0]?.id ?? "");
+    setView("pick");
+  }
+
+  const inviteUrl = currentAssignment
+    ? `https://lienchain.vercel.app/attorney/${caseId}?token=${currentAssignment.token}`
+    : null;
+
+  function copyLink() {
+    if (!inviteUrl) return;
+    navigator.clipboard.writeText(inviteUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function openEmail() {
+    if (!currentAtty || !inviteUrl) return;
+    const firstName = currentAtty.name.split(" ")[0];
+    const subject = encodeURIComponent(`Lien case access — ${caseId}`);
+    const body = encodeURIComponent(
+      `Hi ${firstName},\r\n\r\n` +
+      `I'm sharing access to a personal-injury lien case in LienChain so you can review the settlement waterfall and submit reduction requests if needed.\r\n\r\n` +
+      `Case: ${caseId}\r\n` +
+      `Open: ${inviteUrl}\r\n\r\n` +
+      `This link is unique to you — please don't share it. If you have questions or need a different attorney provisioned, let me know.\r\n\r\n` +
+      `— Sent via LienChain`
+    );
+    window.open(`mailto:${currentAtty.email}?subject=${subject}&body=${body}`, "_self");
+  }
+
+  const fmtDt = iso => iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+
+  return (
+    <div className="db-modal-overlay" onClick={onClose}>
+      <div className="db-modal" onClick={e => e.stopPropagation()}>
+        <button className="db-modal-close" onClick={onClose}>×</button>
+        <h3 className="db-modal-title">Invite Attorney — <span style={{ fontWeight: 400, fontSize: "0.9rem" }}>{caseId}</span></h3>
+
+        {view === "pick" && (
+          <>
+            <p className="db-modal-sub">Select an attorney from your registry, or add a new one.</p>
+            {attorneys.length === 0 ? (
+              <div className="db-form-err" style={{ marginBottom: 12 }}>No attorneys in registry. Add one below.</div>
+            ) : (
+              <label className="db-form-label">Attorney
+                <select className="db-form-input" value={pickedId} onChange={e => setPickedId(e.target.value)}>
+                  {attorneys.map(a => (
+                    <option key={a.id} value={a.id}>{a.name} — {a.firm}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button className="db-btn-ghost" style={{ marginBottom: 16 }} onClick={() => setShowAddAtty(true)}>
+              + Add new attorney
+            </button>
+            <div className="db-modal-actions">
+              <button className="db-btn-secondary" onClick={onClose}>Cancel</button>
+              <button className="db-btn-primary" disabled={!pickedId} onClick={() => generate(pickedId)}>
+                Generate Invite
+              </button>
+            </div>
+          </>
+        )}
+
+        {view === "sent" && currentAssignment && (
+          <>
+            <div className="db-invite-info">
+              <div><strong>Invited:</strong> {currentAtty ? `${currentAtty.name} (${currentAtty.firm})` : "Attorney removed from registry"}</div>
+              <div><strong>Sent:</strong> {fmtDt(currentAssignment.sentAt)}</div>
+              <div><strong>Status:</strong> {currentAssignment.acceptedAt ? `Accepted on ${fmtDt(currentAssignment.acceptedAt)}` : "Awaiting acceptance"}</div>
+            </div>
+            <label className="db-form-label" style={{ marginTop: 12 }}>Invite Link
+              <div className="db-invite-url-row">
+                <input className="db-form-input db-invite-url" readOnly value={inviteUrl} />
+                <button className="db-btn-primary" onClick={copyLink} style={{ flexShrink: 0 }}>
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+            </label>
+            <button className="db-btn-ghost" style={{ marginTop: 8 }} onClick={openEmail}>
+              ✉ Open Email (mailto:)
+            </button>
+            <div className="db-modal-actions" style={{ marginTop: 20 }}>
+              <button className="db-btn-secondary" onClick={reassign}>Reassign</button>
+              <button className="db-btn-secondary" onClick={resend}>Resend (new token)</button>
+              <button className="db-btn-primary" onClick={onClose}>Close</button>
+            </div>
+          </>
+        )}
+
+        {showAddAtty && (
+          <AttorneyFormModal
+            initial={null}
+            onSave={(atty) => { onAddAttorney(atty); setPickedId(atty.id); setShowAddAtty(false); }}
+            onClose={() => setShowAddAtty(false)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Analytics helpers ────────────────────────────────────────────────────────
 // approxSettledAt: legacy liens have no settledAt; use ts + 6 months as a
 // rough placeholder for a typical PI timeline. This is an estimate only —
@@ -393,6 +593,11 @@ export default function Dashboard() {
   const [activeTab,     setActiveTab]     = useState("dashboard");
   const [previewCaseId, setPreviewCaseId] = useState(null);
   const [market,        setMarket]        = useState("All");
+  const [attorneys,     setAttorneys]     = useState(() => loadAttorneys());
+  const [showAttyModal, setShowAttyModal] = useState(false);   // "add" | "edit" | false
+  const [editingAtty,   setEditingAtty]   = useState(null);    // Attorney being edited
+  const [inviteCaseId,  setInviteCaseId]  = useState(null);    // caseId for invite modal
+  const [showInvite,    setShowInvite]    = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -520,6 +725,38 @@ export default function Dashboard() {
     setActiveTab("attorney");
   };
 
+  // ── Attorney registry handlers ───────────────────────────────────────────────
+  const saveAtty = (data) => {
+    setAttorneys(prev => {
+      const exists = prev.find(a => a.id === data.id);
+      const updated = exists
+        ? prev.map(a => a.id === data.id ? data : a)
+        : [...prev, data];
+      saveAttorneys(updated);
+      return updated;
+    });
+  };
+
+  const deleteAtty = (id) => {
+    setAttorneys(prev => {
+      const updated = prev.filter(a => a.id !== id);
+      saveAttorneys(updated);
+      return updated;
+    });
+  };
+
+  // ── Invite handlers ──────────────────────────────────────────────────────────
+  const writeAssignment = (caseId, assignment) => {
+    setCases(prev => {
+      const updated = prev.map(c => c.caseId !== caseId ? c : { ...c, attorneyAssignment: assignment });
+      saveCases(updated);
+      return updated;
+    });
+  };
+
+  const openInvite = (caseId) => { setInviteCaseId(caseId); setShowInvite(true); };
+  const closeInvite = () => { setShowInvite(false); setInviteCaseId(null); };
+
   // Called by AttorneyPreview when a settlement completes.
   // lienIds:    string[]  — all clinic lien IDs on the case
   // hashes:     string[]  — one TX hash per clinic, parallel-indexed with lienIds
@@ -625,7 +862,7 @@ export default function Dashboard() {
 
         {/* ATTORNEY VIEW TAB */}
         {activeTab === "attorney" && (
-          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} />
+          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} cases={cases} onInvite={openInvite} />
         )}
 
         {/* DASHBOARD TAB — overview stats + wallet panel + live activity */}
@@ -855,6 +1092,45 @@ export default function Dashboard() {
               </div>
             )}
           </section>
+
+          {/* ATTORNEYS PANEL */}
+          <div className="db-analytics-card" style={{ marginTop: 8 }}>
+            <div className="db-card-header-row">
+              <h3 className="db-card-title">Attorneys</h3>
+              <button className="db-btn-primary" onClick={() => { setEditingAtty(null); setShowAttyModal(true); }}>+ Add Attorney</button>
+            </div>
+            <p className="db-card-sub">PI attorneys provisioned to access case portals.</p>
+            {attorneys.length === 0 ? (
+              <div className="db-empty-state">No attorneys yet — add one to invite them to a case.</div>
+            ) : (
+              <div className="db-table-wrap">
+                <table className="db-table db-attorneys-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th><th>Firm</th><th>Bar #</th><th>Email</th><th>Added</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attorneys.map(a => (
+                      <tr key={a.id}>
+                        <td style={{ fontWeight: 600 }}>{a.name}</td>
+                        <td>{a.firm}</td>
+                        <td className="db-muted">{a.barNumber || "—"}</td>
+                        <td className="db-muted">{a.email}</td>
+                        <td className="db-muted">{fmtDate(a.addedAt)}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="db-btn-ghost" onClick={() => { setEditingAtty(a); setShowAttyModal(true); }}>Edit</button>
+                          <button className="db-btn-danger" style={{ marginLeft: 6 }} onClick={() => {
+                            if (window.confirm(`Delete attorney ${a.name}? This won't void invites already sent for cases.`)) deleteAtty(a.id);
+                          }}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </>}
 
         {/* LIENS TAB — full ledger + market breakdown */}
@@ -872,6 +1148,8 @@ export default function Dashboard() {
               rows={filteredLiens}
               emptyText={market === "All" ? "No liens yet." : `No liens in ${market}.`}
               onPreview={handlePreview}
+              cases={cases}
+              onInvite={openInvite}
             />
           </section>
 
@@ -1012,6 +1290,25 @@ export default function Dashboard() {
             saveCases(updatedCases);
             // Note: wizard stays open (user may click "Add another clinic" or "Done")
           }}
+        />
+      )}
+
+      {showAttyModal && (
+        <AttorneyFormModal
+          initial={editingAtty}
+          onSave={saveAtty}
+          onClose={() => setShowAttyModal(false)}
+        />
+      )}
+
+      {showInvite && inviteCaseId && (
+        <InviteModal
+          caseId={inviteCaseId}
+          cases={cases}
+          attorneys={attorneys}
+          onWriteAssignment={writeAssignment}
+          onAddAttorney={(atty) => { saveAtty(atty); }}
+          onClose={closeInvite}
         />
       )}
 

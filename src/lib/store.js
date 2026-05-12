@@ -24,6 +24,7 @@ const KEYS = {
   liens:              "lienchain:liens",
   cases:              "lienchain:cases",
   reductionRequests:  "lienchain:reductionRequests",
+  attorneys:          "lienchain:attorneys",
 };
 
 // ── ClinicLien ────────────────────────────────────────────────────────────────
@@ -190,4 +191,35 @@ export function addReductionRequest(request) {
   const updated = [...all, request];
   saveReductionRequests(updated);
   return updated;
+}
+
+// ── Attorney registry ─────────────────────────────────────────────────────────
+
+/**
+ * @typedef {object} Attorney
+ * @property {string} id        'ATTY-' + 8-char random suffix
+ * @property {string} name      Full name + credentials, e.g. "Jane Smith, Esq."
+ * @property {string} firm      Firm name
+ * @property {string} barNumber Optional bar number string
+ * @property {string} email     Contact email
+ * @property {string} addedAt   ISO timestamp
+ */
+
+/** @returns {Attorney[]} */
+export function loadAttorneys() {
+  try {
+    return JSON.parse(localStorage.getItem(KEYS.attorneys) || "[]");
+  } catch (_) { return []; }
+}
+
+/** @param {Attorney[]} attorneys */
+export function saveAttorneys(attorneys) {
+  try {
+    localStorage.setItem(KEYS.attorneys, JSON.stringify(attorneys));
+  } catch (_) {}
+}
+
+/** Generate a short stable attorney ID. */
+export function genAttorneyId() {
+  return "ATTY-" + crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
 }
