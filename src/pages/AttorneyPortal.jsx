@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams, useLocation } from "react-router-dom";
 import ReductionModal from "../components/ReductionModal.jsx";
 import { MARKET_INFO } from "../lib/markets.js";
 import { calcWaterfall } from "../lib/waterfall.js";
@@ -436,13 +437,85 @@ function PaymentModal({ onClose, onComplete, caseData, waterfall }) {
   );
 }
 
+// ── Token gate helpers ────────────────────────────────────────────────────────
+
+function findCaseByCaseId(caseId) {
+  try {
+    const cases = JSON.parse(localStorage.getItem("lienchain:cases") || "[]");
+    return cases.find(c => c.caseId === caseId) ?? null;
+  } catch (_) { return null; }
+}
+
+function updateCaseAssignment(caseId, assignment) {
+  try {
+    const cases = JSON.parse(localStorage.getItem("lienchain:cases") || "[]");
+    const updated = cases.map(c => c.caseId !== caseId ? c : { ...c, attorneyAssignment: assignment });
+    localStorage.setItem("lienchain:cases", JSON.stringify(updated));
+  } catch (_) {}
+}
+
+function AccessRequiredPage({ caseId }) {
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap'); * { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
+      <div style={{ maxWidth: 480, width: "100%", margin: "0 24px", background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 16, padding: "48px 40px", textAlign: "center" }}>
+        <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 28, color: C.dim }}>
+          🔒
+        </div>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: C.white, fontFamily: "'Outfit', sans-serif", marginBottom: 8 }}>
+          Access required for {caseId}
+        </h2>
+        <p style={{ fontSize: 14, color: C.dim, lineHeight: 1.7, marginBottom: 14 }}>
+          This case requires an invitation from the case operator. If you've received an email with a link, click the link directly — don't copy just the URL into your browser, the access token is part of the link.
+        </p>
+        <p style={{ fontSize: 14, color: C.dim, lineHeight: 1.7, marginBottom: 28 }}>
+          If you haven't received an invite or believe this is an error, contact the operator who shared this case with you.
+        </p>
+        <a href="/" style={{ fontSize: 13, color: C.teal, textDecoration: "none", fontWeight: 600 }}>← Back to LienChain</a>
+      </div>
+    </div>
+  );
+}
+
 // ── AttorneyPortal ────────────────────────────────────────────────────────────
 export default function AttorneyPortal() {
+  const { caseId }  = useParams();
+  const location    = useLocation();
+
+  // All hooks before any conditional returns (rules of hooks)
   const [showPayment,   setShowPayment]   = useState(false);
   const [showReduction, setShowReduction] = useState(false);
   const [toast,         setToast]         = useState("");
   const [completed,     setCompleted]     = useState(false);
   const [waterfall,     setWaterfall]     = useState(null);
+
+  // ── Token gate ──────────────────────────────────────────────────────────────
+  const urlParams = new URLSearchParams(location.search);
+  const urlToken  = urlParams.get("token");
+
+  const caseRecord = findCaseByCaseId(caseId);
+  let sessionStore = [];
+  try { sessionStore = JSON.parse(localStorage.getItem("lienchain:attorneySessions") || "[]"); } catch (_) {}
+  const hasValidSession = sessionStore.some(s => s.caseId === caseId);
+  const assignment = caseRecord?.attorneyAssignment ?? null;
+
+  let gateOpen = hasValidSession;
+  if (!gateOpen && urlToken && assignment && urlToken === assignment.token) {
+    if (!assignment.acceptedAt) {
+      updateCaseAssignment(caseId, { ...assignment, acceptedAt: new Date().toISOString() });
+    }
+    if (!sessionStore.some(s => s.caseId === caseId)) {
+      sessionStore.push({ caseId, token: urlToken, acceptedAt: new Date().toISOString() });
+      try { localStorage.setItem("lienchain:attorneySessions", JSON.stringify(sessionStore)); } catch (_) {}
+    }
+    gateOpen = true;
+  }
+
+  if (!gateOpen) {
+    return <AccessRequiredPage caseId={caseId} reason={!caseRecord ? "not-found" : "no-token"} />;
+  }
+
+  // ── Portal body (uses MOCK_CASE — real case data wired in a future phase) ───
   const caseData = MOCK_CASE;
 
   // Default on-chain amount for the button label before user interacts with waterfall

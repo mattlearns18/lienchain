@@ -748,7 +748,25 @@ export default function Dashboard() {
   // ── Invite handlers ──────────────────────────────────────────────────────────
   const writeAssignment = (caseId, assignment) => {
     setCases(prev => {
-      const updated = prev.map(c => c.caseId !== caseId ? c : { ...c, attorneyAssignment: assignment });
+      // For legacy single-clinic liens (seed or wizard-created where lien.id === caseId),
+      // there may be no matching Case record in state. Synthesize one so the assignment
+      // persists and the token gate can find it. (Part D bug fix — Phase 8 Commit 2)
+      let base = prev;
+      if (!prev.some(c => c.caseId === caseId)) {
+        const lien = liens.find(l => l.id === caseId) || SETTLEMENTS.find(l => l.id === caseId);
+        if (lien) {
+          base = [...prev, {
+            caseId,
+            attorney:       lien.attorney       || "",
+            treatmentMonth: lien.treatmentMonth  || "",
+            treatmentYear:  lien.treatmentYear   || "",
+            clinicLienIds:  [lien.id],
+            status:         lien.status === "Settled" ? "Settled" : "Active",
+            createdAt:      lien.ts || new Date().toISOString(),
+          }];
+        }
+      }
+      const updated = base.map(c => c.caseId !== caseId ? c : { ...c, attorneyAssignment: assignment });
       saveCases(updated);
       return updated;
     });
