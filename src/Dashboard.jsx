@@ -783,6 +783,14 @@ export default function Dashboard() {
   const openInvite = (caseId) => { setInviteCaseId(caseId); setShowInvite(true); };
   const closeInvite = () => { setShowInvite(false); setInviteCaseId(null); };
 
+  const saveFiatReceipt = (caseId, receipt) => {
+    setCases(prev => {
+      const updated = prev.map(c => c.caseId !== caseId ? c : { ...c, fiatReceipt: receipt });
+      saveCases(updated);
+      return updated;
+    });
+  };
+
   // Called by AttorneyPreview when a settlement completes.
   // lienIds:    string[]  — all clinic lien IDs on the case
   // hashes:     string[]  — one TX hash per clinic, parallel-indexed with lienIds
@@ -885,7 +893,7 @@ export default function Dashboard() {
 
         {/* ATTORNEY VIEW TAB */}
         {activeTab === "attorney" && (
-          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} cases={cases} onInvite={openInvite} />
+          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} cases={cases} onInvite={openInvite} isOperatorView={true} onFiatReceiptSave={saveFiatReceipt} />
         )}
 
         {/* DASHBOARD TAB — overview stats + wallet panel + live activity */}

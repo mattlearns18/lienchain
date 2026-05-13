@@ -529,6 +529,86 @@ function ComplianceBadges({ market }) {
   );
 }
 
+// ── FiatReceiptModal ──────────────────────────────────────────────────────────
+// Operator-only modal to record fiat receipt before settlement execution.
+function FiatReceiptModal({ expectedAmount, initial, onSave, onClose }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [amount,       setAmount]       = useState(initial?.amount       ?? expectedAmount);
+  const [receivedAt,   setReceivedAt]   = useState(initial?.receivedAt   ?? todayStr);
+  const [reference,    setReference]    = useState(initial?.reference    ?? "");
+  const [confirmedBy,  setConfirmedBy]  = useState(initial?.confirmedBy  ?? "");
+  const [err,          setErr]          = useState("");
+
+  const amountNum  = parseFloat(amount) || 0;
+  const mismatch   = Math.abs(amountNum - expectedAmount) > 1;
+
+  function submit(e) {
+    e.preventDefault();
+    if (!amount || amountNum <= 0) return setErr("Amount is required.");
+    if (!receivedAt)               return setErr("Date received is required.");
+    if (!reference.trim())         return setErr("Reference is required.");
+    if (!confirmedBy.trim())       return setErr("Confirmed by is required.");
+    onSave({ amount: amountNum, receivedAt, reference: reference.trim(), confirmedBy: confirmedBy.trim() });
+  }
+
+  return (
+    <div className="ap-overlay" onClick={onClose}>
+      <div className="ap-modal" onClick={e => e.stopPropagation()}>
+        <button className="ap-close" onClick={onClose}>×</button>
+        <h3 className="ap-modal-title">Mark Fiat Received</h3>
+        <p className="ap-modal-sub">Record the attorney's wire/check arrival in LienCo's bank account before settlement.</p>
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <label className="db-form-label">Amount Received ($)
+            <input
+              className="db-form-input"
+              type="number" min="0" step="0.01"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              placeholder={String(expectedAmount)}
+            />
+            {mismatch && (
+              <span style={{ fontSize: "0.78rem", color: "#fbbf24", marginTop: 4, display: "block" }}>
+                Amount differs from expected {usd(expectedAmount)} by {usd(Math.abs(amountNum - expectedAmount))}. Confirm before saving.
+              </span>
+            )}
+          </label>
+          <label className="db-form-label">Date Received
+            <input
+              className="db-form-input"
+              type="date"
+              value={receivedAt}
+              onChange={e => setReceivedAt(e.target.value)}
+            />
+          </label>
+          <label className="db-form-label">Reference
+            <input
+              className="db-form-input"
+              type="text"
+              value={reference}
+              onChange={e => setReference(e.target.value)}
+              placeholder="Wire confirmation #, check #, or ACH ref"
+            />
+          </label>
+          <label className="db-form-label">Confirmed by
+            <input
+              className="db-form-input"
+              type="text"
+              value={confirmedBy}
+              onChange={e => setConfirmedBy(e.target.value)}
+              placeholder="Your initials or name"
+            />
+          </label>
+          {err && <div className="db-form-err">{err}</div>}
+          <div className="db-modal-actions">
+            <button type="button" className="db-btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="db-btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── CaseReductionsPanel ───────────────────────────────────────────────────────
 // Shows all reduction requests submitted for the selected case — view-only in Phase 5.
 // Each clinic on the case can see requests from other clinics for transparency.
@@ -568,7 +648,7 @@ function CaseReductionsPanel({ caseId, reductions }) {
 }
 
 // ── Main exported component ───────────────────────────────────────────────────
-export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases, onInvite }) {
+export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases, onInvite, isOperatorView = false, onFiatReceiptSave }) {
   // Group liens by caseId so multi-clinic cases show as one entry
   const caseMap = {};
   for (const l of liens) {
@@ -588,6 +668,7 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
   const [selectedCaseId, setSelectedCaseId] = useState(resolveInitial);
   const [showSettle,    setShowSettle]    = useState(false);
   const [showReduction, setShowReduction] = useState(false);
+  const [showFiatModal, setShowFiatModal] = useState(false);
   const [toast,         setToast]         = useState("");
   const [waterfall,     setWaterfall]     = useState(null);
   const [reductions,    setReductions]    = useState(() => loadReductionRequests());
@@ -617,9 +698,29 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
   const splitClinicAmt = waterfall?.clinicAmt      ?? 0;
   const splitAmount    = waterfall?.onChainAmount   ?? totalBill;
 
+  // Fiat receipt for the selected case (operator-view only)
+  const caseObj    = cases?.find(c => c.caseId === selectedCaseId);
+  const fiatReceipt = caseObj?.fiatReceipt ?? null;
+  // Expected LienCo share = sum of per-clinic LienCo amounts from waterfall,
+  // falling back to bill × split% before waterfall has computed
+  const expectedFiat = waterfall?.lienCoAmt > 0
+    ? waterfall.lienCoAmt
+    : caseClinics.reduce((s, c) => s + c.bill * (c.split ?? 70) / 100, 0);
+
   return (
     <div className="ap-root">
       {toast && <div className="rm-toast">{toast}</div>}
+      {showFiatModal && isOperatorView && (
+        <FiatReceiptModal
+          expectedAmount={expectedFiat}
+          initial={fiatReceipt}
+          onSave={(receipt) => {
+            onFiatReceiptSave?.(selectedCaseId, receipt);
+            setShowFiatModal(false);
+          }}
+          onClose={() => setShowFiatModal(false)}
+        />
+      )}
       {showSettle && (
         <SettleModal
           lien={lien}
@@ -729,9 +830,37 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
       {/* Case-wide reduction requests — all clinics visible for transparency */}
       <CaseReductionsPanel caseId={selectedCaseId} reductions={reductions} />
 
+      {/* Fiat receipt strip — operator-only, shown when receipt exists */}
+      {isOperatorView && fiatReceipt && (
+        <div className="ap-fiat-strip">
+          <div className="ap-fiat-strip-main">
+            <span className="ap-fiat-check">✓</span>
+            <span>
+              <strong>Fiat received</strong> — {usd(fiatReceipt.amount)} on{" "}
+              {new Date(fiatReceipt.receivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} by {fiatReceipt.confirmedBy}
+            </span>
+          </div>
+          <div className="ap-fiat-strip-ref">
+            Reference: {fiatReceipt.reference}
+            <button className="ap-fiat-update" onClick={() => setShowFiatModal(true)}>Update</button>
+          </div>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="ap-actions">
-        <button className="ap-settle-btn" onClick={() => setShowSettle(true)}>
+        {isOperatorView && !fiatReceipt && (
+          <button className="ap-fiat-btn" onClick={() => setShowFiatModal(true)}>
+            Mark Fiat Received
+          </button>
+        )}
+        <button
+          className="ap-settle-btn"
+          onClick={() => setShowSettle(true)}
+          disabled={isOperatorView && !fiatReceipt}
+          title={isOperatorView && !fiatReceipt ? "Fiat receipt must be confirmed first." : undefined}
+          style={isOperatorView && !fiatReceipt ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
+        >
           Settle Now — {usd(splitAmount)}
         </button>
         <button className="ap-secondary-btn" onClick={() => setShowReduction(true)}>Request Reduction</button>

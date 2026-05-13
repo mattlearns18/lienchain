@@ -169,6 +169,34 @@
 }
 .ap-secondary-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Fiat receipt strip (operator-only, shown above Settle Now when receipt exists) */
+.ap-fiat-strip {
+  background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25);
+  border-radius: 8px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 0.83rem; color: var(--text); line-height: 1.5;
+}
+.ap-fiat-strip-main { display: flex; align-items: baseline; gap: 8px; }
+.ap-fiat-check { color: var(--green); font-weight: 700; }
+.ap-fiat-strip-ref { font-size: 0.78rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.ap-fiat-update {
+  background: none; border: none; color: var(--accent);
+  font-size: 0.78rem; cursor: pointer; padding: 0; text-decoration: underline;
+}
+.ap-fiat-update:hover { color: var(--text); }
+
+/* Mark Fiat Received button (operator-only, amber/neutral, shown above disabled Settle Now) */
+.ap-fiat-btn {
+  background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.4); color: #fbbf24;
+  border-radius: 8px; padding: 13px 20px;
+  font-size: 0.9rem; font-weight: 700; cursor: pointer; flex: 1;
+  transition: background 0.15s;
+}
+.ap-fiat-btn:hover { background: rgba(245,158,11,0.2); }
+
+/* Disabled Settle Now */
+.ap-settle-btn:disabled { pointer-events: none; }
+
 /* Disclaimer */
 .ap-disclaimer { font-size: 0.82rem; color: var(--muted); line-height: 1.6; margin: 0; }
 .ap-disclaimer strong { color: var(--text); }
