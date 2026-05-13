@@ -7,8 +7,7 @@
 // proven in xrpl-tokenize.js.
 
 import { Client } from "xrpl";
-
-const WSS_ENDPOINT = "wss://s.altnet.rippletest.net:51233";
+import { getNetworkConfig } from "./network.js";
 const CONNECT_TIMEOUT_MS = 10_000;
 // Ripple epoch starts 2000-01-01; JS epoch starts 1970-01-01
 const RIPPLE_EPOCH_OFFSET = 946_684_800;
@@ -36,7 +35,8 @@ function decodeMemo(memoData) {
 // Opens a connected client, runs `work(client)`, then always disconnects.
 // Callers never see the raw client.
 async function withClient(work) {
-  const client = new Client(WSS_ENDPOINT, { connectionTimeout: CONNECT_TIMEOUT_MS });
+  const { wssUrl } = getNetworkConfig();
+  const client = new Client(wssUrl, { connectionTimeout: CONNECT_TIMEOUT_MS });
   try {
     await client.connect();
     return await work(client);

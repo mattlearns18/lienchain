@@ -3,6 +3,7 @@ import "./AttorneyPreview.css";
 import ReductionModal from "./ReductionModal.jsx";
 import { loadReductionRequests } from "../lib/store.js";
 import { MARKET_INFO } from "../lib/markets.js";
+import { getNetworkConfig } from "../lib/network.js";
 
 // Generates a plausible-looking 64-char hex TX hash for demo settlement
 function genFakeTxHash() {
@@ -353,7 +354,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
     onSettled?.(caseId, caseClinics.map(c => c.id), hashes, recoveries);
   }
 
-  const EXPLORER = "https://testnet.xrpl.org/transactions/";
+  const EXPLORER = getNetworkConfig().explorer;
 
   return (
     <div className="ap-overlay" onClick={onClose}>

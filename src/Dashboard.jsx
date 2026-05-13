@@ -25,14 +25,14 @@ const SETTLEMENTS = [
   { id: "PI-LIEN-2026-04-IN001", market: "IN", clinic: "IN Clinic",  bill: 9800,  split: 70, ts: "2026-04-20T02:49:07Z", tx1: "521F59DE3D867D701866C98F57CE2507D55F87CAA50AE6BAF8C0D03A0C3E2526", tx2: "573115D5AAEAD7C8847B7D2D0402E5ADF42B3A4CB0542BC944DF095AEE819CD0", flags: ["in-nonassignable"] },
 ];
 
-const EXPLORER  = "https://testnet.xrpl.org/transactions/";
-const ACCT_URL  = "https://testnet.xrpl.org/accounts/";
+const { explorer: EXPLORER, accountUrl: ACCT_URL } = getNetworkConfig();
 const FLAG_INFO = {
   "tx-72h":           { label: "TX 72h Flag",      color: "flag-orange", tip: "Texas law provides a 72-hour rescission window after lien assignment. Monitor for reversal requests." },
   "in-nonassignable": { label: "IN Non-Assignable", color: "flag-red",   tip: "Indiana statute limits lien assignability in PI cases. Confirm assignment validity before secondary transfer." },
 };
 
 import { MARKETS, MARKET_INFO } from "./lib/markets.js";
+import { getNetworkConfig, NETWORK_NAME, IS_MAINNET } from "./lib/network.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const usd      = (n) => `$${Number(n).toLocaleString()}`;
@@ -51,6 +51,14 @@ const CHART_LINE_COLOR    = "#06b6d4"; // --accent2 cyan
 // ── Sub-components ───────────────────────────────────────────────────────────
 function Spinner() {
   return <span className="spinner" aria-label="Loading" />;
+}
+
+function NetworkBadge() {
+  return (
+    <span className={`db-network-badge ${IS_MAINNET ? "db-network-mainnet" : "db-network-testnet"}`}>
+      {NETWORK_NAME.toUpperCase()}
+    </span>
+  );
 }
 
 function FlagBadge({ flag }) {
@@ -838,16 +846,13 @@ export default function Dashboard() {
         <div className="db-container db-nav-inner">
           <Link to="/" className="db-logo">⛓️ LienChain</Link>
           <div className="db-nav-right">
-            <span className="db-badge db-badge-green">Testnet MVP</span>
+            <NetworkBadge />
             {lastFetch && <span className="db-last-fetch">Updated {fmtTime(lastFetch)}</span>}
             <button className="db-refresh-btn" onClick={fetchData} disabled={loading}>
               {loading ? <Spinner /> : "↻ Refresh"}
             </button>
             <div className="db-create-group">
               <button className="db-create-btn" onClick={() => setShowIntake(true)}>+ Create Lien</button>
-              <span className="db-testnet-pill" title="Tokenization runs on XRPL Testnet. Production-ready architecture, zero real-money risk during pilot.">
-                XRPL TESTNET
-              </span>
             </div>
             <Link to="/" className="db-nav-link">← Back to site</Link>
           </div>

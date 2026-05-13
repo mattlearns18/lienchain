@@ -3,6 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import ReductionModal from "../components/ReductionModal.jsx";
 import { MARKET_INFO } from "../lib/markets.js";
 import { calcWaterfall } from "../lib/waterfall.js";
+import { getNetworkConfig, NETWORK_NAME, IS_MAINNET } from "../lib/network.js";
 
 const C = {
   bg: "#06090f",
@@ -33,7 +34,7 @@ const C = {
 // issueLienMPT in xrpl-tokenize.js. This constant exists so the displayed
 // hash and the XRPL Explorer link below it reference the same value.
 const DEMO_TX_HASH = "A8F2D1C9B3E73FE9E8BC5D7E5FC4A4D3B2A190E7C8D5F3B6A1E4C2F0D8B7A9B3E";
-const DEMO_EXPLORER_URL = `https://testnet.xrpl.org/transactions/${DEMO_TX_HASH}`;
+const DEMO_EXPLORER_URL = getNetworkConfig().explorer + DEMO_TX_HASH;
 const DEMO_TX_HASH_SHORT = `${DEMO_TX_HASH.slice(0, 12)}…${DEMO_TX_HASH.slice(-4)}`;
 
 const MOCK_CASE = {
@@ -557,6 +558,9 @@ export default function AttorneyPortal() {
           <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg, ${C.teal}, ${C.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 900, color: C.bg, fontFamily: "'Outfit', sans-serif" }}>L</div>
           <span style={{ fontSize: 17, fontWeight: 800, color: C.white, fontFamily: "'Outfit', sans-serif", letterSpacing: -0.5 }}>LienChain</span>
           <span style={{ fontSize: 10, color: C.dim, background: C.surface, padding: "3px 8px", borderRadius: 5, fontFamily: "'IBM Plex Mono', monospace", textTransform: "uppercase", letterSpacing: 1.2 }}>Attorney Portal</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4, textTransform: "uppercase", letterSpacing: 1.2, fontFamily: "'IBM Plex Mono', monospace", ...(IS_MAINNET ? { background: "#3d1818", color: "#fca5a5", border: "2px solid #dc2626", boxShadow: "0 0 0 1px #dc2626 inset" } : { background: "#163d28", color: "#4ade80", border: "1px solid #166534" }) }}>
+            {NETWORK_NAME.toUpperCase()}
+          </span>
         </div>
         <a href="/" style={{ fontSize: 13, color: C.dim, textDecoration: "none" }}>← Back to LienChain</a>
       </nav>

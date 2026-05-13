@@ -5,13 +5,12 @@
  * WebSocket bypasses the CORS restriction that blocks HTTP JSON-RPC fetch()
  * calls from the browser.
  *
- * Security: seed is read from import.meta.env.VITE_LIENCO_TESTNET_SEED only.
- * This is testnet — never use a real-funds seed here.
+ * Security: seed is read from getNetworkConfig().seed (network.js).
+ * Testnet seed only — never use a real-funds seed here.
  */
 
 import { Client, Wallet } from "xrpl";
-
-const WSS_ENDPOINT = "wss://s.altnet.rippletest.net:51233";
+import { getNetworkConfig } from "./network.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,9 +41,9 @@ export async function generateCurrencyCode(tokenId) {
  * @returns {{ success, txHash, explorerUrl, ledgerIndex?, error? }}
  */
 export async function issueLienMPT(lienData) {
-  const seed = import.meta.env.VITE_LIENCO_TESTNET_SEED;
+  const { seed, wssUrl, explorer } = getNetworkConfig();
   if (!seed) {
-    throw new Error("XRPL seed not configured — VITE_LIENCO_TESTNET_SEED is not set");
+    throw new Error("XRPL seed not configured — set the appropriate seed env var for the active network (see .env.example)");
   }
 
   console.log("[XRPL] Starting NFTokenMint for lien:", lienData.id);
@@ -58,11 +57,11 @@ export async function issueLienMPT(lienData) {
     return { success: false, error: `Invalid seed: ${err.message}` };
   }
 
-  const client = new Client(WSS_ENDPOINT);
+  const client = new Client(wssUrl);
 
   try {
     // 1. Connect via WebSocket (no CORS restriction)
-    console.log("[XRPL] Connecting to", WSS_ENDPOINT);
+    console.log("[XRPL] Connecting to", wssUrl);
     await client.connect();
     console.log("[XRPL] Connected");
 
@@ -114,9 +113,9 @@ export async function issueLienMPT(lienData) {
     const result = await client.submitAndWait(signed.tx_blob);
     console.log("[XRPL] submitAndWait result:", JSON.stringify(result, null, 2));
 
-    const txHash     = result.result.hash;
-    const ledgerIdx  = result.result.ledger_index;
-    const explorerUrl = `https://testnet.xrpl.org/transactions/${txHash}`;
+    const txHash      = result.result.hash;
+    const ledgerIdx   = result.result.ledger_index;
+    const explorerUrl = explorer + txHash;
 
     console.log("[XRPL] TX hash:", txHash, "(length:", txHash?.length, ")");
     console.log("[XRPL] Ledger index:", ledgerIdx);

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import "./IntakeWizard.css";
 import { issueLienMPT } from "../lib/xrpl-tokenize.js";
+import { getNetworkConfig } from "../lib/network.js";
 
-const DEMO_MODE = !import.meta.env.VITE_LIENCO_TESTNET_SEED;
+const DEMO_MODE = !getNetworkConfig().seed;
 
 // ── Static data ──────────────────────────────────────────────────────────────
 const CLINICS = [
@@ -185,7 +186,7 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
         await new Promise(r => setTimeout(r, delays[i]));
       }
       const hash = mockTxHash();
-      const url  = `https://testnet.xrpl.org/transactions/${hash}`;
+      const url  = getNetworkConfig().explorer + hash;
       setTxHash(hash);
       setExplorerUrl(url);
       setDone(true);
@@ -513,8 +514,8 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
           <div className="wiz-body">
             {DEMO_MODE && (
               <div className="wiz-demo-banner">
-                Demo mode — tokenization will be simulated. Configure{" "}
-                <code>VITE_LIENCO_TESTNET_SEED</code> to enable real on-chain issuance.
+                Demo mode — tokenization will be simulated. Configure a network seed in{" "}
+                <code>.env.local</code> to enable real on-chain issuance.
               </div>
             )}
             <div className="wiz-review-grid">

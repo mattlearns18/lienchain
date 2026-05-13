@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import "./App.css";
+import { getNetworkConfig } from "./lib/network.js";
 
 const TX_HASH = "F9C2658D82838EE7BB3ECA12C8958211BC56D0362B31F192FBB6E21FAEF4116D";
-const EXPLORER = `https://testnet.xrpl.org/transactions/${TX_HASH}`;
+const EXPLORER = getNetworkConfig().explorer + TX_HASH;
 const DEMO_EMAIL = "matthewsabine18@gmail.com";
 
 function Badge({ children, color = "blue" }) {
@@ -306,7 +307,7 @@ export default function App() {
           <span className="muted">MIT License · Built on XRPL</span>
           <div className="footer-links">
             <a href="https://github.com/mattlearns18/lienchain" target="_blank" rel="noreferrer">GitHub →</a>
-            <a href="https://testnet.xrpl.org" target="_blank" rel="noreferrer">XRPL Explorer →</a>
+            <a href={getNetworkConfig().explorer} target="_blank" rel="noreferrer">XRPL Explorer →</a>
             <a href="#contact">Contact →</a>
             <Link to="/attorney/demo">Attorney Demo →</Link>
           </div>
