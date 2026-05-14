@@ -887,12 +887,17 @@ export default function Dashboard() {
     const lien = liens.find(l => l.id === lienId);
     if (!lien) return;
 
-    // Use clinic's share at the lien's split ratio as the amount
+    // Use clinic's share at the lien's split ratio as the amount.
+    // TODO(phase10): retry should re-read from waterfall result, not approximate from bill × split.
+    // On mainnet with pro-rata adjustments (e.g. IN floor, pool exhaustion), bill × split
+    // may overstate or understate the clinic's actual recovery. Retry should go through the
+    // Attorney View settlement flow where the full waterfall is computed.
     const clinicSharePct = 1 - (lien.split ?? 70) / 100;
     const amount = lien.bill * clinicSharePct;
 
     const result = await executeSettlementPayment({ caseId, lienId, clinic, amount });
-    handleSettled(caseId, [lienId], [result.success ? result.txHash : null], [0], [result]);
+    const lienCoShare = Math.round(lien.bill * (lien.split ?? 70) / 100);
+    handleSettled(caseId, [lienId], [result.success ? result.txHash : null], [lienCoShare], [result]);
   };
 
   const marketLabel = market === "All" ? "" : ` · ${market}`;

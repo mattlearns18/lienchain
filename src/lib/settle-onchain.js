@@ -72,13 +72,19 @@ export async function executeSettlementPayment({ caseId, lienId, clinic, amount 
       ts:         new Date().toISOString(),
     };
 
+    // Testnet: scale dollar amount 1000:1 so $1 = 0.001 XRP = 1,000 drops,
+    // keeping payments within faucet-funded wallet balances (~100 XRP each).
+    // The on-chain amounts prove fund movement; exact dollar denomination
+    // is a mainnet concern.
+    // TODO(phase10): mainnet currency = issued stablecoin Amount object
+    // (e.g. RLUSD/USDC per MAINNET-READINESS.md). Do NOT use this scaling on mainnet.
+    const scaleDollarsToXrp = (usd) => xrpToDrops((Math.max(0.000001, usd) / 1000).toFixed(6));
+
     const tx = {
       TransactionType: "Payment",
       Account:         wallet.classicAddress,
       Destination:     destination,
-      // TODO(phase10): mainnet currency selection — native XRP here for testnet.
-      // For mainnet, Amount may need to be {currency, issuer, value} for RLUSD/USDC.
-      Amount:          xrpToDrops(Math.max(0.000001, amount).toFixed(6)),
+      Amount:          scaleDollarsToXrp(amount), // TODO(phase10): mainnet currency = issued stablecoin
       Memos: [{
         Memo: {
           MemoType: Buffer.from("LienChain-ClinicPayout").toString("hex").toUpperCase(),
@@ -95,6 +101,20 @@ export async function executeSettlementPayment({ caseId, lienId, clinic, amount 
     if (!txHash || txHash.length !== 64) {
       throw new Error(`Unexpected TX hash: "${txHash}"`);
     }
+
+    // tesSUCCESS is the ONLY valid success code in XRPL. tec* codes (e.g.
+    // tecUNFUNDED_PAYMENT) are applied to the ledger and consume the fee but
+    // do NOT transfer funds — the clinic receives nothing. Treat everything
+    // other than tesSUCCESS as a failure so the partial-failure path fires.
+    const txResult = result.result.meta?.TransactionResult;
+    if (txResult !== "tesSUCCESS") {
+      return {
+        success: false,
+        txHash,
+        error:   `On-chain failure: ${txResult || "unknown"}`,
+      };
+    }
+
     return { success: true, txHash, ledgerIndex: result.result.ledger_index };
 
   } catch (err) {

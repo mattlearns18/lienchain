@@ -386,7 +386,9 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
     });
     const recoveries = caseClinics.map(c => {
       const row = waterfall?.clinicRows?.find(r => r.id === c.id);
-      return row?.lienCoAmt ?? 0;
+      // Use waterfall lienCoAmt (LienCo dollar share after pro-rata) if available;
+      // fall back to bill × split% as a reasonable approximation when waterfall is null.
+      return row?.lienCoAmt ?? Math.round(c.bill * (c.split ?? 70) / 100);
     });
 
     onSettled?.(caseId, caseClinics.map(c => c.id), allHashes, recoveries, allResults);
@@ -455,17 +457,28 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
             </h3>
             <p className="ap-modal-sub">{caseId} — {usd(settleAmt)}</p>
             <div className="ap-steps">
-              {steps.map((s, i) => (
-                <div key={i} className={`ap-step ${(step >= i || phase === "done") ? "ap-step-active" : ""}`}>
-                  <div className={`ap-step-dot ${phase === "done" || step > i ? "dot-green" : step === i ? "dot-teal" : ""}`}>
-                    {(phase === "done" || step > i) ? "✓" : i + 1}
+              {steps.map((s, i) => {
+                const isLastStep    = i === steps.length - 1;
+                const successCount  = txHashes.filter(r => r.success).length;
+                const totalAttempted = clinicsToSettle.length;
+                // Override the final step's detail once results are in.
+                const detail = phase === "done" && isLastStep && totalAttempted > 1
+                  ? successCount === totalAttempted
+                    ? `${successCount} TX${successCount === 1 ? "" : "s"} confirmed on XRPL`
+                    : `${successCount} of ${totalAttempted} TXs confirmed on XRPL`
+                  : s.detail;
+                return (
+                  <div key={i} className={`ap-step ${(step >= i || phase === "done") ? "ap-step-active" : ""}`}>
+                    <div className={`ap-step-dot ${phase === "done" || step > i ? "dot-green" : step === i ? "dot-teal" : ""}`}>
+                      {(phase === "done" || step > i) ? "✓" : i + 1}
+                    </div>
+                    <div>
+                      <div className="ap-step-label">{s.label}</div>
+                      <div className="ap-step-detail">{detail}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="ap-step-label">{s.label}</div>
-                    <div className="ap-step-detail">{s.detail}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             {phase === "done" && (
               <>
@@ -572,6 +585,15 @@ function FiatReceiptModal({ expectedAmount, initial, onSave, onClose }) {
   const [reference,    setReference]    = useState(initial?.reference    ?? "");
   const [confirmedBy,  setConfirmedBy]  = useState(initial?.confirmedBy  ?? "");
   const [err,          setErr]          = useState("");
+
+  // Sync prefill if the waterfall finishes computing after this modal mounted.
+  // Only applies to the initial prefill (no prior receipt); user edits are preserved.
+  useEffect(() => {
+    if (!initial?.amount && expectedAmount > 0) {
+      setAmount(expectedAmount);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expectedAmount]);
 
   const amountNum  = parseFloat(amount) || 0;
   const mismatch   = Math.abs(amountNum - expectedAmount) > 1;
