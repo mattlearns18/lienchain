@@ -33,6 +33,7 @@ const FLAG_INFO = {
 
 import { MARKETS, MARKET_INFO } from "./lib/markets.js";
 import { getNetworkConfig, NETWORK_NAME, IS_MAINNET } from "./lib/network.js";
+import { executeSettlementPayment } from "./lib/settle-onchain.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const usd      = (n) => `$${Number(n).toLocaleString()}`;
@@ -107,13 +108,14 @@ function MarketFilter({ value, onChange }) {
 }
 
 function StatusCell({ status }) {
+  if (status === "Partial Settlement") return <span className="db-status-partial">⚠ Partial</span>;
   if (status === "Active")  return <span className="db-status-active">🟢 Active</span>;
   if (status === "Draft")   return <span className="db-status-draft">📋 Draft</span>;
   return <span className="db-status-badge">✅ Settled</span>;
 }
 
 // ── CaseGroupRow — one parent row per case, optional child rows per clinic ───
-function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite }) {
+function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite, onRetryClinic }) {
   const [open, setOpen] = useState(false);
   const isMulti = clinics.length > 1;
 
@@ -123,11 +125,12 @@ function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite }) {
   const wtdLienCoPct  = totalBill > 0 ? Math.round(wtdLienCoAmt / totalBill * 100) : 70;
   const wtdClinicPct  = 100 - wtdLienCoPct;
 
-  // Case status: undefined status → "Settled" (matches original LienRow fallthrough logic;
-  // seed liens have no status field and should display as Settled)
+  // Case status: prefer the stored case record (authoritative after handleSettled),
+  // fall back to computing from clinic statuses for seed data without a case record.
   const statuses = new Set(clinics.map(c => c.status ?? "Settled"));
-  const caseStatus = statuses.size === 1 ? [...statuses][0]
+  const computedStatus = statuses.size === 1 ? [...statuses][0]
     : statuses.has("Active") ? "Active" : statuses.has("Draft") ? "Draft" : "Settled";
+  const caseStatus = caseObj?.status ?? computedStatus;
 
   // Flags: union across all clinics
   const allFlags = [...new Set(clinics.flatMap(c => c.flags ?? []))];
@@ -219,7 +222,17 @@ function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite }) {
               ? (c.flags ?? []).map(f => <FlagBadge key={f} flag={f} />)
               : <span className="db-muted">—</span>}
           </td>
-          <td><StatusCell status={c.status ?? "Settled"} /></td>
+          <td>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <StatusCell status={c.status ?? "Settled"} />
+              {c.settlementError && (
+                <span
+                  style={{ color: "#f87171", cursor: "help", fontSize: "0.85rem" }}
+                  title={c.settlementError.message}
+                >⚠</span>
+              )}
+            </span>
+          </td>
           <td>
             {c.tx1
               ? <a href={EXPLORER + c.tx1} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(c.tx1)}</a>
@@ -230,7 +243,19 @@ function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite }) {
               ? <a href={EXPLORER + c.tx2} target="_blank" rel="noreferrer" className="db-tx-link">{shortH(c.tx2)}</a>
               : <span className="db-muted">—</span>}
           </td>
-          <td><span className="db-muted">—</span></td>
+          <td>
+            {(c.settlementError || (!c.tx2 && caseStatus === "Partial Settlement")) && onRetryClinic
+              ? (
+                <button
+                  className="db-btn-secondary"
+                  style={{ fontSize: "0.78rem", padding: "2px 8px" }}
+                  onClick={() => onRetryClinic(caseId, c.id, { name: c.clinic, destinationAddress: c.destinationAddress })}
+                >
+                  Retry Payout
+                </button>
+              )
+              : <span className="db-muted">—</span>}
+          </td>
         </tr>
       ))}
     </>
@@ -238,7 +263,7 @@ function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite }) {
 }
 
 // ── CaseLienTable — groups liens by caseId, renders CaseGroupRow per case ────
-function CaseLienTable({ rows, emptyText, onPreview, cases, onInvite }) {
+function CaseLienTable({ rows, emptyText, onPreview, cases, onInvite, onRetryClinic }) {
   if (!rows.length) return <div className="db-feed-empty">{emptyText}</div>;
 
   // Group by caseId, preserving insertion order
@@ -276,6 +301,7 @@ function CaseLienTable({ rows, emptyText, onPreview, cases, onInvite }) {
               onPreview={onPreview}
               caseObj={cases?.find(c => c.caseId === cid)}
               onInvite={onInvite}
+              onRetryClinic={onRetryClinic}
             />
           ))}
         </tbody>
@@ -791,48 +817,82 @@ export default function Dashboard() {
     });
   };
 
-  // Called by AttorneyPreview when a settlement completes.
+  // Called by AttorneyPreview when a settlement run completes (initial or retry).
   // lienIds:    string[]  — all clinic lien IDs on the case
-  // hashes:     string[]  — one TX hash per clinic, parallel-indexed with lienIds
+  // hashes:     string[]  — one TX hash per clinic (null on failure), parallel to lienIds
   // recoveries: number[]  — per-clinic LienCo recovery amount from calcWaterfall
-  const handleSettled = (caseId, lienIds, hashes = [], recoveries = []) => {
+  // results:    object[]  — full result objects {success, txHash?, error?} per clinic
+  const handleSettled = (caseId, lienIds, hashes = [], recoveries = [], results = []) => {
     const settledAt = new Date().toISOString();
-    // 1 + 2 — flip lien statuses to Settled; write tx2, recovery, and settledAt
-    setLiens(prev => {
-      const updated = prev.map(l => {
-        const idx = lienIds.indexOf(l.id);
-        if (idx === -1) return l;
-        return {
-          ...l,
-          status:    "Settled",
-          tx2:       hashes[idx] ?? l.tx2 ?? null,
-          recovery:  recoveries[idx] ?? null,       // LienCo dollar share from waterfall
-          settledAt: l.settledAt ?? settledAt,       // don't overwrite if already set
-        };
-      });
-      saveLiens(updated, SEED_IDS);
-      return updated;
-    });
 
-    // 3 — flip any open reduction requests on this case to "accepted"
-    const allRequests = loadReductionRequests();
-    const anyOpen = allRequests.some(r => r.caseId === caseId && r.status === "open");
-    if (anyOpen) {
-      const updated = allRequests.map(r =>
-        r.caseId === caseId && r.status === "open" ? { ...r, status: "accepted" } : r
-      );
-      saveReductionRequests(updated);
+    // Compute updated lien records synchronously from current liens state
+    const updatedLiens = liens.map(l => {
+      const idx = lienIds.indexOf(l.id);
+      if (idx === -1) return l;
+      const result = results[idx];
+      if (result && !result.success) {
+        // Failed clinic: write settlementError, keep status and tx2 unchanged
+        return { ...l, settlementError: { message: result.error, attemptedAt: settledAt } };
+      }
+      // Success: clear any previous settlementError, write tx2/recovery/settledAt
+      const { settlementError: _err, ...rest } = l;
+      return {
+        ...rest,
+        status:    "Settled",
+        tx2:       hashes[idx] ?? l.tx2 ?? null,
+        recovery:  recoveries[idx] ?? null,
+        settledAt: l.settledAt ?? settledAt,
+      };
+    });
+    saveLiens(updatedLiens, SEED_IDS);
+    setLiens(updatedLiens);
+
+    // Compute case status from the updated lens for this case
+    const caseLiensFinal = updatedLiens.filter(l => (l.caseId ?? l.id) === caseId);
+    const allSettled  = caseLiensFinal.length > 0 &&
+                        caseLiensFinal.every(l => l.status === "Settled" && !l.settlementError);
+    const someSettled = caseLiensFinal.some(l => l.status === "Settled" && !l.settlementError);
+    const newCaseStatus = allSettled ? "Settled" : someSettled ? "Partial Settlement" : "Active";
+
+    // Flip open reduction requests to "accepted" only on full settlement
+    if (newCaseStatus === "Settled") {
+      const allRequests = loadReductionRequests();
+      const anyOpen = allRequests.some(r => r.caseId === caseId && r.status === "open");
+      if (anyOpen) {
+        const updated = allRequests.map(r =>
+          r.caseId === caseId && r.status === "open" ? { ...r, status: "accepted" } : r
+        );
+        saveReductionRequests(updated);
+      }
     }
 
-    // 1 — roll case status up to Settled when all its clinic liens are now settled
+    // Roll case status up
     setCases(prev => {
       const updated = prev.map(c => {
         if (c.caseId !== caseId) return c;
-        return { ...c, status: "Settled" };
+        return { ...c, status: newCaseStatus };
       });
       saveCases(updated);
       return updated;
     });
+  };
+
+  // Retry a single failed clinic payout from the Liens tab child row.
+  const handleRetryClinic = async (caseId, lienId, clinic) => {
+    const confirmed = window.confirm(
+      `Retry on-chain payout for ${clinic.name}? This will submit a new Payment transaction on ${NETWORK_NAME}.`
+    );
+    if (!confirmed) return;
+
+    const lien = liens.find(l => l.id === lienId);
+    if (!lien) return;
+
+    // Use clinic's share at the lien's split ratio as the amount
+    const clinicSharePct = 1 - (lien.split ?? 70) / 100;
+    const amount = lien.bill * clinicSharePct;
+
+    const result = await executeSettlementPayment({ caseId, lienId, clinic, amount });
+    handleSettled(caseId, [lienId], [result.success ? result.txHash : null], [0], [result]);
   };
 
   const marketLabel = market === "All" ? "" : ` · ${market}`;
@@ -1181,6 +1241,7 @@ export default function Dashboard() {
               onPreview={handlePreview}
               cases={cases}
               onInvite={openInvite}
+              onRetryClinic={handleRetryClinic}
             />
           </section>
 

@@ -93,7 +93,8 @@
 .db-clinics-badge { background: rgba(59,130,246,0.15); color: #60a5fa; padding: 1px 7px; border-radius: 99px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
 .db-multi-chip { cursor: help; }
 .db-market-chip { background: rgba(59,130,246,0.15); color: #60a5fa; padding: 2px 10px; border-radius: 99px; font-size: 0.78rem; font-weight: 700; }
-.db-status-badge { color: var(--green); font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.db-status-badge   { color: var(--green);  font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.db-status-partial { color: #f59e0b;       font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
 .db-tx-link { color: var(--accent2); font-size: 0.78rem; font-family: monospace; text-decoration: none; white-space: nowrap; }
 .db-tx-link:hover { text-decoration: underline; }
 .db-flags-cell { display: flex; flex-direction: column; gap: 4px; }

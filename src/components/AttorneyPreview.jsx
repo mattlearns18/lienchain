@@ -4,14 +4,15 @@ import ReductionModal from "./ReductionModal.jsx";
 import { loadReductionRequests } from "../lib/store.js";
 import { MARKET_INFO } from "../lib/markets.js";
 import { getNetworkConfig } from "../lib/network.js";
-
-// Generates a plausible-looking 64-char hex TX hash for demo settlement
-function genFakeTxHash() {
-  const h = "0123456789ABCDEF";
-  return Array.from({ length: 64 }, () => h[Math.floor(Math.random() * 16)]).join("");
-}
+import { executeSettlementPayment } from "../lib/settle-onchain.js";
 
 const usd = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Parse a YYYY-MM-DD date string as a local date (avoids UTC-midnight off-by-one in CDT/etc.)
+function parseLocalDate(ymd) {
+  const [y, m, d] = ymd.split("-");
+  return new Date(+y, +m - 1, +d);
+}
 
 // ── Multi-clinic waterfall calculator (Phase 6: IN floor enforcement) ────────
 //
@@ -289,7 +290,7 @@ function WaterfallCard({ clinics, onWaterfallChange }) {
 function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
   const [phase,    setPhase]    = useState("confirm");
   const [step,     setStep]     = useState(0);
-  const [txHashes, setTxHashes] = useState([]); // one per clinic
+  const [txHashes, setTxHashes] = useState([]); // array of {success, txHash?, error?, clinicId}
 
   const settleAmt = waterfall?.onChainAmount ?? caseClinics.reduce((s, c) => s + c.bill, 0);
   const lienCoAmt = waterfall?.lienCoAmt     ?? 0;
@@ -297,61 +298,98 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
   const isMulti   = caseClinics.length > 1;
   const caseId    = lien.caseId ?? lien.id;
 
+  // Clinics that need settling in this run — skip already-settled for idempotent retry
+  const clinicsToSettle = caseClinics.filter(c => !c.tx2 || c.settlementError);
+  const isRetryRun      = clinicsToSettle.length < caseClinics.length;
+
   const effectiveLienCoPct = (lienCoAmt + clinicAmt) > 0
     ? Math.round(lienCoAmt / (lienCoAmt + clinicAmt) * 100)
     : (caseClinics[0]?.split ?? 70);
   const hasInViolation  = lien.market === "IN" && effectiveLienCoPct > 80;
   const hasUnusualSplit = effectiveLienCoPct < 30 || effectiveLienCoPct > 85;
 
-  // Steps: single-clinic = 4 classic; multi-clinic = 1 verify + N per-clinic + 1 done
-  const steps = isMulti
+  // Animation steps — sized to the clinics being settled in this run
+  const steps = (clinicsToSettle.length > 1 || isRetryRun)
     ? [
         { label: "Verifying attorney credentials", detail: "Bar # on file" },
-        ...caseClinics.map((c, i) => ({
-          label: `Settling clinic ${i + 1} of ${caseClinics.length}`,
+        ...clinicsToSettle.map((c, i) => ({
+          label: `Settling clinic ${i + 1} of ${clinicsToSettle.length}`,
           detail: c.clinic,
         })),
-        { label: "All settlements confirmed", detail: `${caseClinics.length} TXs on XRPL` },
+        {
+          label:  "All settlements confirmed",
+          detail: `${clinicsToSettle.length} TX${clinicsToSettle.length === 1 ? "" : "s"} on XRPL`,
+        },
       ]
     : [
         { label: "Verifying attorney credentials", detail: "Bar # on file" },
         { label: "Confirming lien details",         detail: lien.market + " market" },
-        { label: "Executing settlement on XRPL",    detail: "Hook auto-splitting funds" },
-        { label: "Settlement complete",             detail: "3.2 seconds" },
+        { label: "Executing settlement on XRPL",    detail: "Payment transaction submitted" },
+        { label: "Settlement complete",             detail: "Confirmed on ledger" },
       ];
 
   async function run() {
-    const hashes = caseClinics.map(() => genFakeTxHash());
-    const memoData = {
-      caseId,
-      grossSettlement:    waterfall?.grossNum,
-      attorneyFeePercent: waterfall?.attyFeePct,
-      attorneyFeeAmount:  waterfall?.attyFeeAmt,
-      caseCosts:          waterfall?.costsNum,
-      netAvailable:       waterfall?.netAvailable,
-      lienCoAmount:       lienCoAmt,
-      clinicAmount:       clinicAmt,
-      patientNetRecovery: waterfall?.patientNet,
-      clinicRows: waterfall?.clinicRows?.map(r => ({
-        id: r.id, clinic: r.clinic,
-        recovery: r.recovery, lienCoAmt: r.lienCoAmt, clinicAmt: r.clinicAmt,
-      })),
-    };
-    console.log("[LienChain] Settlement memo (on-chain data):", memoData);
-
     setPhase("running");
-    for (let i = 0; i < steps.length; i++) {
-      setStep(i);
-      await new Promise(r => setTimeout(r, 900 + (i % 2) * 500));
+    setStep(0);
+
+    const runResults = [];
+
+    if (clinicsToSettle.length === 1 && !isRetryRun) {
+      // Single-clinic initial settlement — 4-step animation, real TX on step 2
+      await new Promise(r => setTimeout(r, 800));
+      setStep(1);
+      await new Promise(r => setTimeout(r, 700));
+      setStep(2);
+
+      const c   = clinicsToSettle[0];
+      const row = waterfall?.clinicRows?.find(r => r.id === c.id);
+      const clinicShare = row?.clinicAmt ?? c.bill * (1 - (c.split ?? 70) / 100);
+      const result = await executeSettlementPayment({
+        caseId, lienId: c.id,
+        clinic: { name: c.clinic, destinationAddress: c.destinationAddress },
+        amount: clinicShare,
+      });
+      runResults.push({ ...result, clinicId: c.id });
+      setStep(3);
+    } else {
+      // Multi-clinic or retry — step through each clinic sequentially
+      await new Promise(r => setTimeout(r, 700));
+      for (let i = 0; i < clinicsToSettle.length; i++) {
+        setStep(i + 1);
+        const c   = clinicsToSettle[i];
+        const row = waterfall?.clinicRows?.find(r => r.id === c.id);
+        const clinicShare = row?.clinicAmt ?? c.bill * (1 - (c.split ?? 70) / 100);
+        const result = await executeSettlementPayment({
+          caseId, lienId: c.id,
+          clinic: { name: c.clinic, destinationAddress: c.destinationAddress },
+          amount: clinicShare,
+        });
+        runResults.push({ ...result, clinicId: c.id });
+      }
+      setStep(steps.length - 1);
     }
-    setTxHashes(hashes);
+
+    setTxHashes(runResults);
     setPhase("done");
-    // Pass per-clinic LienCo recovery amounts so Dashboard can persist lien.recovery
+
+    // Build unified arrays over ALL caseClinics so handleSettled can apply the full update.
+    // Already-settled clinics (tx2 set, no error) get their existing data preserved.
+    const allHashes = caseClinics.map(c => {
+      if (c.tx2 && !c.settlementError) return c.tx2;
+      const r = runResults.find(r => r.clinicId === c.id);
+      return r?.success ? r.txHash : null;
+    });
+    const allResults = caseClinics.map(c => {
+      if (c.tx2 && !c.settlementError) return { success: true, txHash: c.tx2 };
+      const r = runResults.find(r => r.clinicId === c.id);
+      return r ?? { success: true }; // clinics not in this batch are treated as already done
+    });
     const recoveries = caseClinics.map(c => {
       const row = waterfall?.clinicRows?.find(r => r.id === c.id);
       return row?.lienCoAmt ?? 0;
     });
-    onSettled?.(caseId, caseClinics.map(c => c.id), hashes, recoveries);
+
+    onSettled?.(caseId, caseClinics.map(c => c.id), allHashes, recoveries, allResults);
   }
 
   const EXPLORER = getNetworkConfig().explorer;
@@ -431,37 +469,33 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
             </div>
             {phase === "done" && (
               <>
-                {isMulti ? (
-                  /* Multi-clinic: list one TX hash per clinic */
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {caseClinics.map((c, i) => (
+                {/* One result row per settled clinic */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {clinicsToSettle.map((c, i) => {
+                    const r = txHashes[i];
+                    return (
                       <div key={c.id} className="ap-hash-box">
-                        <div className="ap-hash-label">{c.clinic}</div>
-                        <a
-                          href={EXPLORER + txHashes[i]}
-                          target="_blank" rel="noreferrer"
-                          className="ap-hash"
-                          style={{ textDecoration: "none" }}
-                        >
-                          {txHashes[i]?.slice(0, 16)}…{txHashes[i]?.slice(-8)} ↗
-                        </a>
+                        <div className="ap-hash-label">
+                          {clinicsToSettle.length > 1 ? c.clinic : "Transaction Hash"}
+                        </div>
+                        {r?.success ? (
+                          <a
+                            href={EXPLORER + r.txHash}
+                            target="_blank" rel="noreferrer"
+                            className="ap-hash"
+                            style={{ textDecoration: "none" }}
+                          >
+                            {r.txHash?.slice(0, 16)}…{r.txHash?.slice(-8)} ↗
+                          </a>
+                        ) : (
+                          <span style={{ color: "#f87171", fontSize: "0.8rem" }}>
+                            Failed: {r?.error ?? "unknown error"}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  /* Single-clinic: one hash box */
-                  <div className="ap-hash-box">
-                    <div className="ap-hash-label">Transaction Hash</div>
-                    <a
-                      href={EXPLORER + txHashes[0]}
-                      target="_blank" rel="noreferrer"
-                      className="ap-hash"
-                      style={{ textDecoration: "none" }}
-                    >
-                      {txHashes[0]?.slice(0, 16)}…{txHashes[0]?.slice(-8)} ↗
-                    </a>
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
                 <button className="ap-execute-btn" style={{ marginTop: 4 }} onClick={onClose}>Done</button>
               </>
             )}
@@ -682,9 +716,17 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
     setWaterfall(null);
   }
 
-  // All clinics in the selected case, shaped for WaterfallCard
+  // All clinics in the selected case, shaped for WaterfallCard + SettleModal
   const caseClinics = (caseMap[selectedCaseId] ?? []).map(l => ({
-    id: l.id, clinic: l.clinic, bill: l.bill, split: l.split ?? 70, market: l.market,
+    id:                l.id,
+    clinic:            l.clinic,
+    bill:              l.bill,
+    split:             l.split ?? 70,
+    market:            l.market,
+    destinationAddress: l.destinationAddress,
+    tx2:               l.tx2,
+    settlementError:   l.settlementError,
+    status:            l.status,
   }));
   const lien = caseMap[selectedCaseId]?.[0] ?? liens[0];
   if (!lien) return <div className="ap-empty">No liens available. Create one first.</div>;
@@ -701,11 +743,11 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
   // Fiat receipt for the selected case (operator-view only)
   const caseObj    = cases?.find(c => c.caseId === selectedCaseId);
   const fiatReceipt = caseObj?.fiatReceipt ?? null;
-  // Expected LienCo share = sum of per-clinic LienCo amounts from waterfall,
-  // falling back to bill × split% before waterfall has computed
-  const expectedFiat = waterfall?.lienCoAmt > 0
-    ? waterfall.lienCoAmt
-    : caseClinics.reduce((s, c) => s + c.bill * (c.split ?? 70) / 100, 0);
+  // Expected fiat = full net pool the attorney wires to LienCo (netAvailable),
+  // falling back to total bills before waterfall has computed.
+  const expectedFiat = waterfall?.netAvailable > 0
+    ? waterfall.netAvailable
+    : caseClinics.reduce((s, c) => s + c.bill, 0);
 
   return (
     <div className="ap-root">
@@ -837,7 +879,7 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
             <span className="ap-fiat-check">✓</span>
             <span>
               <strong>Fiat received</strong> — {usd(fiatReceipt.amount)} on{" "}
-              {new Date(fiatReceipt.receivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} by {fiatReceipt.confirmedBy}
+              {parseLocalDate(fiatReceipt.receivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} by {fiatReceipt.confirmedBy}
             </span>
           </div>
           <div className="ap-fiat-strip-ref">
@@ -861,7 +903,7 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
           title={isOperatorView && !fiatReceipt ? "Fiat receipt must be confirmed first." : undefined}
           style={isOperatorView && !fiatReceipt ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
         >
-          Settle Now — {usd(splitAmount)}
+          {caseObj?.status === "Partial Settlement" ? "Retry Failed Payouts" : "Settle Now"} — {usd(splitAmount)}
         </button>
         <button className="ap-secondary-btn" onClick={() => setShowReduction(true)}>Request Reduction</button>
       </div>

@@ -20,6 +20,21 @@ const CLINICS = [
   "Other",
 ];
 
+// Testnet destination addresses for each named clinic — seeded from wallets.json.
+// TODO(phase10): replace with a proper clinic-registry UI and per-clinic onboarding flow.
+const CLINIC_DESTINATIONS = {
+  "KC Pain & Recovery":    "rMsuF1wrwMNcFntEet39yUGcTUpyAhWiMA",
+  "STL Ortho Clinic":      "r3CuAh6S7JnjcsN5z8LyoUDZiBvT8aVBBP",
+  "Houston Spine & Joint": "rJZjjSDgfPkKhCKnLrmGuKn8Npb54eBU6D",
+  "DFW Injury Center":     "rJZjjSDgfPkKhCKnLrmGuKn8Npb54eBU6D",
+  "LV Recovery Center":    "rKvS6Pa5GXiCxB8cQXJy1oBKbE2gYGFoWu",
+  "Henderson Pain Mgmt":   "rKvS6Pa5GXiCxB8cQXJy1oBKbE2gYGFoWu",
+  "Indy Rehab Partners":   "rnanVCk3APmjh1dtzS9pESNRm42VsSLvXt",
+  "Plaza Rehab Group":     "rMsuF1wrwMNcFntEet39yUGcTUpyAhWiMA",
+  "Midwest Spine Center":  "r3CuAh6S7JnjcsN5z8LyoUDZiBvT8aVBBP",
+  "Gateway Injury Clinic": "r3CuAh6S7JnjcsN5z8LyoUDZiBvT8aVBBP",
+};
+
 import { MARKETS as MARKETS_LIST, MARKET_INFO } from "../lib/markets.js";
 
 // Wizard market options: exclude "All", shaped as {value, label} for <select>
@@ -140,10 +155,11 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
       attorney:       effectiveAttorney,
       treatmentMonth: effectiveTreatMonth,
       treatmentYear:  effectiveTreatYear,
-      tx1:            hash,
-      tx2:            null,
+      tx1:               hash,
+      tx2:               null,
       flags,
       status,
+      destinationAddress: CLINIC_DESTINATIONS[clinicName] ?? null,
     };
   }
 
