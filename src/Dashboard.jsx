@@ -76,15 +76,17 @@ function FlagBadge({ flag }) {
 
 function MultiChip({ markets }) {
   const [tip, setTip] = useState(false);
+  const sorted = [...markets].sort();
   return (
     <span
       className="db-market-chip db-multi-chip"
       onMouseEnter={() => setTip(true)}
       onMouseLeave={() => setTip(false)}
       style={{ position: "relative" }}
+      title={`Markets: ${sorted.join(", ")}`}
     >
       Multi
-      {tip && <span className="flag-tip">{markets.join(", ")}</span>}
+      {tip && <span className="flag-tip">{sorted.join(", ")}</span>}
     </span>
   );
 }
@@ -645,7 +647,7 @@ export default function Dashboard() {
       setActivity(txs);
       setLastFetch(new Date());
     } catch (err) {
-      setError("Unable to connect to XRPL testnet. Check your connection and try again.");
+      setError(`Unable to connect to XRPL ${NETWORK_NAME}. Check your connection and try again.`);
     } finally {
       setLoading(false);
     }
@@ -966,9 +968,8 @@ export default function Dashboard() {
           <div className="db-header">
             <div>
               <h1 className="db-title">Multi-Market Dashboard{marketLabel}</h1>
-              <p className="db-sub">Live XRPL Testnet · All transactions verifiable on-chain</p>
+              <p className="db-sub">All transactions verifiable on-chain</p>
             </div>
-            <span className="db-badge db-badge-blue">v3</span>
           </div>
 
           {error && (
@@ -1059,7 +1060,7 @@ export default function Dashboard() {
                   <LineChart data={analytics.recoveryData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="monthLabel" tick={{ fill: "var(--muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis domain={[0, "dataMax + 10"]} tickFormatter={v => `${v}%`} tick={{ fill: "var(--muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={46} />
+                    <YAxis domain={[0, "dataMax + 10"]} tickFormatter={v => v === 0 ? "" : `${Math.round(v)}%`} tick={{ fill: "var(--muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={46} />
                     <Tooltip
                       formatter={v => [`${Number(v).toFixed(1)}%`, "Recovery Rate"]}
                       contentStyle={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13 }}
@@ -1138,7 +1139,7 @@ export default function Dashboard() {
             {error ? (
               <div className="db-feed-empty">Unable to load live transactions — {error}</div>
             ) : loading && activity.length === 0 ? (
-              <div className="db-feed-empty"><Spinner /> Fetching transactions from XRPL testnet…</div>
+              <div className="db-feed-empty"><Spinner /> Fetching transactions from XRPL {NETWORK_NAME}…</div>
             ) : activity.length === 0 ? (
               <div className="db-feed-empty">No recent transactions found.</div>
             ) : (
@@ -1234,7 +1235,7 @@ export default function Dashboard() {
           <div className="db-header">
             <div>
               <h1 className="db-title">Liens{marketLabel}</h1>
-              <p className="db-sub">All liens issued on XRPL testnet — operator view</p>
+              <p className="db-sub">All liens issued on XRPL {NETWORK_NAME} — operator view</p>
             </div>
           </div>
 
@@ -1411,7 +1412,7 @@ export default function Dashboard() {
 
       <footer className="db-footer">
         <div className="db-container db-footer-inner">
-          <span className="db-muted">⛓️ LienChain · XRPL Testnet · MIT License</span>
+          <span className="db-muted">⛓️ LienChain · XRPL {NETWORK_NAME.toUpperCase()} · MIT License</span>
           <a href="https://github.com/mattlearns18/lienchain" target="_blank" rel="noreferrer" className="db-nav-link">GitHub →</a>
         </div>
       </footer>

@@ -288,9 +288,10 @@ function WaterfallCard({ clinics, onWaterfallChange }) {
 
 // ── SettleModal ───────────────────────────────────────────────────────────────
 function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
-  const [phase,    setPhase]    = useState("confirm");
-  const [step,     setStep]     = useState(0);
-  const [txHashes, setTxHashes] = useState([]); // array of {success, txHash?, error?, clinicId}
+  const [phase,         setPhase]         = useState("confirm");
+  const [step,          setStep]          = useState(0);
+  const [txHashes,      setTxHashes]      = useState([]); // array of {success, txHash?, error?, clinicId}
+  const [confirmedCount, setConfirmedCount] = useState(0); // successful TX count, stored in state for final-screen render
 
   const settleAmt = waterfall?.onChainAmount ?? caseClinics.reduce((s, c) => s + c.bill, 0);
   const lienCoAmt = waterfall?.lienCoAmt     ?? 0;
@@ -369,7 +370,9 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
       setStep(steps.length - 1);
     }
 
+    const successCount = runResults.filter(r => r.success).length;
     setTxHashes(runResults);
+    setConfirmedCount(successCount);
     setPhase("done");
 
     // Build unified arrays over ALL caseClinics so handleSettled can apply the full update.
@@ -458,14 +461,13 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
             <p className="ap-modal-sub">{caseId} — {usd(settleAmt)}</p>
             <div className="ap-steps">
               {steps.map((s, i) => {
-                const isLastStep    = i === steps.length - 1;
-                const successCount  = txHashes.filter(r => r.success).length;
+                const isLastStep     = i === steps.length - 1;
                 const totalAttempted = clinicsToSettle.length;
-                // Override the final step's detail once results are in.
+                // Override the final step's detail once results are in (confirmedCount from state).
                 const detail = phase === "done" && isLastStep && totalAttempted > 1
-                  ? successCount === totalAttempted
-                    ? `${successCount} TX${successCount === 1 ? "" : "s"} confirmed on XRPL`
-                    : `${successCount} of ${totalAttempted} TXs confirmed on XRPL`
+                  ? confirmedCount === totalAttempted
+                    ? `${confirmedCount} TX${confirmedCount === 1 ? "" : "s"} confirmed on XRPL`
+                    : `${confirmedCount} of ${totalAttempted} TXs confirmed on XRPL`
                   : s.detail;
                 return (
                   <div key={i} className={`ap-step ${(step >= i || phase === "done") ? "ap-step-active" : ""}`}>
@@ -765,11 +767,14 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
   // Fiat receipt for the selected case (operator-view only)
   const caseObj    = cases?.find(c => c.caseId === selectedCaseId);
   const fiatReceipt = caseObj?.fiatReceipt ?? null;
-  // Expected fiat = full net pool the attorney wires to LienCo (netAvailable),
-  // falling back to total bills before waterfall has computed.
+  // Expected fiat = full net pool the attorney wires to LienCo (netAvailable).
+  // Use waterfall result when available; otherwise compute from default inputs
+  // (gross = totalBills, attyFee = 33%, costs = $0 — same defaults as WaterfallCard)
+  // so the prefill is always netAvailable, not the gross amount.
+  const totalBillsForFiat = caseClinics.reduce((s, c) => s + c.bill, 0);
   const expectedFiat = waterfall?.netAvailable > 0
     ? waterfall.netAvailable
-    : caseClinics.reduce((s, c) => s + c.bill, 0);
+    : Math.round(totalBillsForFiat * (1 - 33 / 100));
 
   return (
     <div className="ap-root">

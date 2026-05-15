@@ -1,7 +1,7 @@
 import { useState } from "react";
 import "./IntakeWizard.css";
 import { issueLienMPT } from "../lib/xrpl-tokenize.js";
-import { getNetworkConfig } from "../lib/network.js";
+import { getNetworkConfig, NETWORK_NAME } from "../lib/network.js";
 
 const DEMO_MODE = !getNetworkConfig().seed;
 
@@ -52,7 +52,7 @@ const MARKET_OPTIONS = MARKETS_LIST
 const MONTHS   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const YEARS    = [2024, 2025, 2026];
 const STEPS    = ["Clinic & Market", "Case Details", "Split Config", "Review & Tokenize"];
-const SUB_STEPS = ["Preparing transaction", "Connecting to XRPL testnet", "Issuing MPT token", "Confirming on ledger"];
+const SUB_STEPS = ["Preparing transaction", `Connecting to XRPL ${NETWORK_NAME}`, "Issuing token", "Confirming on ledger"];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function genCaseId() {
@@ -278,7 +278,7 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
               </h2>
               <p className="wiz-sub">
                 {done
-                  ? DEMO_MODE ? "Lien tokenized (simulated)" : "Lien tokenized on XRPL Testnet"
+                  ? DEMO_MODE ? "Lien tokenized (simulated)" : `Lien tokenized on XRPL ${NETWORK_NAME}`
                   : submitting
                   ? "Tokenizing…"
                   : `Step ${step + 1} of 4 — ${STEPS[step]}`}
@@ -575,8 +575,8 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
               <div className="wiz-explainer-title">What happens when you submit</div>
               {[
                 mode === "add"
-                  ? `An MPT will be issued on XRPL testnet, linked to case ${effectiveCaseId}`
-                  : "An MPT will be issued on XRPL testnet",
+                  ? `A token will be issued on XRPL ${NETWORK_NAME}, linked to case ${effectiveCaseId}`
+                  : `A token will be issued on XRPL ${NETWORK_NAME}`,
                 "The lien will appear in your portfolio",
                 "An attorney portal link will be generated",
                 "You'll get a transaction hash",
@@ -609,7 +609,7 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
         {/* ── SUBMITTING ── */}
         {submitting && !done && (
           <div className="wiz-body wiz-progress-body">
-            <p className="wiz-progress-title">Tokenizing on XRPL Testnet…</p>
+            <p className="wiz-progress-title">Tokenizing on XRPL {NETWORK_NAME}…</p>
             <div className="wiz-sub-steps">
               {SUB_STEPS.map((s, i) => (
                 <div key={s} className={`wiz-sub-step ${i <= submitStep ? "sub-active" : "sub-idle"}`}>
@@ -633,10 +633,10 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
           <div className="wiz-body wiz-success-body">
             <div className="wiz-success-icon">✓</div>
             <h3 className="wiz-success-title">
-              {DEMO_MODE ? "Lien Tokenized (Simulated)" : "Lien Tokenized on XRPL Testnet"}
+              {DEMO_MODE ? "Lien Tokenized (Simulated)" : `Lien Tokenized on XRPL ${NETWORK_NAME}`}
             </h3>
             <p className="wiz-success-sub">
-              {lienId} has been issued{DEMO_MODE ? " (simulated)" : " as an NFT record"} on XRPL testnet
+              {lienId} has been issued{DEMO_MODE ? " (simulated)" : " as an NFT record"} on XRPL {NETWORK_NAME}
               {mode === "add" ? ` and added to case ${effectiveCaseId}` : ""}.
             </p>
             <div className="wiz-tx-box">

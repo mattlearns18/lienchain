@@ -512,6 +512,10 @@ export default function AttorneyPortal() {
     gateOpen = true;
   }
 
+  // /attorney/demo is a public showcase route — always bypass the token gate.
+  // All other caseIds flow through Phase 8 token validation above.
+  if (caseId === "demo") gateOpen = true;
+
   if (!gateOpen) {
     return <AccessRequiredPage caseId={caseId} reason={!caseRecord ? "not-found" : "no-token"} />;
   }

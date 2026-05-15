@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 import "./App.css";
 import { getNetworkConfig } from "./lib/network.js";
 
-const TX_HASH = "F9C2658D82838EE7BB3ECA12C8958211BC56D0362B31F192FBB6E21FAEF4116D";
-const EXPLORER = getNetworkConfig().explorer + TX_HASH;
 const DEMO_EMAIL = "matthewsabine18@gmail.com";
 
 function Badge({ children, color = "blue" }) {
@@ -45,7 +43,6 @@ export default function App() {
       <a href="#problem" onClick={() => setMenuOpen(false)}>Problem</a>
       <a href="#solution" onClick={() => setMenuOpen(false)}>Solution</a>
       <a href="#features" onClick={() => setMenuOpen(false)}>Features</a>
-      <a href="#status" onClick={() => setMenuOpen(false)}>Status</a>
       <a
         href="https://github.com/mattlearns18/lienchain"
         target="_blank"
@@ -91,28 +88,25 @@ export default function App() {
       {/* HERO */}
       <Section className="hero">
         <div className="hero-badges">
-          <Badge color="green">Testnet MVP Live</Badge>
-          <Badge color="blue">XRPL Hackathon 2025</Badge>
+          <Badge color="green">Mainnet-Ready Platform</Badge>
         </div>
         <h1 className="hero-title">
-          Tokenized PI Medical Lien<br />
+          Tokenized PI Medical Lien{" "}
           <span className="gradient-text">Settlement on XRPL</span>
         </h1>
         <p className="hero-sub">
-          Replacing 120-day paper cycles with 3-second on-chain settlement.
-          MPT liens · RLUSD payments · Configurable splits · Immutable audit trail.
+          Replacing 120-day paper cycles with on-chain settlement on the XRP Ledger.
+          Per-state compliance · Multi-clinic case support · Real-time portfolio analytics · Permanent on-chain audit trail.
         </p>
         <div className="hero-actions">
-          <a href={EXPLORER} target="_blank" rel="noreferrer" className="btn btn-primary">
-            View First Lien on Testnet →
-          </a>
-          <Link to="/dashboard" className="btn btn-outline">View Live Dashboard →</Link>
+          <Link to="/dashboard" className="btn btn-primary">View Live Dashboard →</Link>
+          <Link to="/attorney/demo" className="btn btn-outline">Attorney Portal Demo →</Link>
           <a href="#features" className="btn btn-outline">See What's Built</a>
         </div>
         <div className="hero-stat-row">
           <div className="hero-stat">
-            <span className="stat-num">$8,500</span>
-            <span className="stat-label">First lien tokenized</span>
+            <span className="stat-num">5</span>
+            <span className="stat-label">States supported</span>
           </div>
           <div className="hero-stat">
             <span className="stat-num">3s</span>
@@ -131,7 +125,7 @@ export default function App() {
 
       {/* PROBLEM */}
       <Section id="problem">
-        <h2 className="section-title">🚧 The Problem</h2>
+        <h2 className="section-title">The Problem</h2>
         <p className="section-sub">
           The U.S. PI medical receivables market holds an estimated <strong>$2 billion</strong> in
           outstanding liens — all settled on paper, wires, and 90–120 day cycles.
@@ -154,16 +148,32 @@ export default function App() {
 
       {/* SOLUTION */}
       <Section id="solution" className="section-alt">
-        <h2 className="section-title">💡 The Solution</h2>
+        <h2 className="section-title">The Solution</h2>
         <p className="section-sub">
           LienChain replaces the paper stack with a composable on-chain settlement layer.
         </p>
         <div className="flow">
           {[
-            { step: "01", label: "Lien Tokenized", detail: "PI medical lien issued as MPT on XRPL with full metadata — bill amount, discount rate, clinic ID, maturity." },
-            { step: "02", label: "Case Settles", detail: "Attorney wallet sends RLUSD to LienCo for the full settlement amount. Transaction confirmed in 3 seconds." },
-            { step: "03", label: "Splits Automatically", detail: "XRPL Hook triggers disbursement — LienCo retains its configured % and remits the clinic's share instantly." },
-            { step: "04", label: "Audit Trail On-Chain", detail: "Every transaction — issuance, settlement, split — is permanently recorded with JSON memo metadata." },
+            {
+              step: "01",
+              label: "Lien Tokenized",
+              detail: "PI medical lien minted as an NFToken on XRPL with hex-encoded metadata (bill, split, clinic, market, attorney). Multi-clinic cases supported.",
+            },
+            {
+              step: "02",
+              label: "Waterfall Computed",
+              detail: "When the case settles, the attorney portal walks gross → fee → costs → net available → per-clinic pro-rata, with state-specific rules automatically applied.",
+            },
+            {
+              step: "03",
+              label: "Fiat Confirmed",
+              detail: "Operator records the attorney's wire or check arrival in LienCo's bank account. The on-chain payouts are gated on this confirmation.",
+            },
+            {
+              step: "04",
+              label: "On-Chain Payouts",
+              detail: "One verifiable Payment transaction per clinic. Partial-failure recovery: any failed clinic flagged with a Retry button, idempotent re-runs only re-attempt failures.",
+            },
           ].map(({ step, label, detail }) => (
             <div className="flow-step" key={step}>
               <span className="flow-num">{step}</span>
@@ -178,16 +188,17 @@ export default function App() {
 
       {/* FEATURES */}
       <Section id="features">
-        <h2 className="section-title">✅ Features Built</h2>
-        <p className="section-sub">Working testnet scripts — not mockups.</p>
+        <h2 className="section-title">Features Built</h2>
+        <p className="section-sub">A full-stack receivables settlement platform — not a mockup.</p>
         <div className="grid grid-3">
           {[
-            { icon: "👛", title: "Wallet Generation", body: "Generates and funds LienCo + Clinic wallets from testnet faucet. Credentials persisted to wallets.json.", done: true },
-            { icon: "🪙", title: "MPT Lien Issuance", body: "Trust line creation + PILIEN token issuance with full lien metadata in hex-encoded JSON memo.", done: true },
-            { icon: "⚖️", title: "Configurable Splits", body: "Runtime split %: node settle-lien.js 8500 68. No hardcoded 70/30 — any ratio works.", done: true },
-            { icon: "📨", title: "Settlement Flow", body: "Attorney → LienCo (full amount) then LienCo → Clinic (remainder). Both TXs carry structured memos.", done: true },
-            { icon: "↩️", title: "Clawback (Planned)", body: "Lien reversal for case loss. MPT clawback flag set on issuance to support dispute resolution.", done: false },
-            { icon: "📊", title: "Dashboard (Planned)", body: "React UI with live XRPL transaction feed, lien status tracker, and one-click settlement.", done: false },
+            { icon: "🪙", title: "Lien Tokenization", body: "NFTokenMint on XRPL with full metadata — bill, split, clinic, market, attorney. Every lien has a permanent on-chain record.", done: true },
+            { icon: "🏥", title: "Multi-Clinic Case Support", body: "A single PI case can have N clinic liens under one case ID. Waterfall distributes the net pool across all clinics in a single settlement run.", done: true },
+            { icon: "⚖️", title: "Per-State Compliance", body: "Indiana 20% clinic floor enforced in the waterfall. Texas hospital lien priority advisory. Configurable per-state policy layer.", done: true },
+            { icon: "📊", title: "Portfolio Analytics", body: "6-tile KPI dashboard: deployed capital, at-risk exposure, recovery rate, avg days to settle, active/settled case counts. Exposure-by-market chart and aging buckets.", done: true },
+            { icon: "👤", title: "Attorney Provisioning", body: "Add attorneys to a registry, generate tokenized invite URLs per case, track Invited → Accepted status. Token-gated attorney portal with full waterfall access.", done: true },
+            { icon: "⛓️", title: "On-Chain Settlement", body: "Real XRPL Payment transactions per clinic. tesSUCCESS enforcement. Partial-failure recovery with per-clinic Retry. Fiat receipt gate before payouts fire.", done: true },
+            { icon: "🚀", title: "Mainnet-Ready Feature Flag", body: "VITE_NETWORK=testnet|mainnet switch with separate seeds, explorer URLs, and a pre-flight checklist covering LLC, bank, E&O, and opinion-letter requirements.", done: true },
           ].map(({ icon, title, body, done }) => (
             <Card key={title} className={done ? "" : "card-dim"}>
               <div className="card-header">
@@ -203,16 +214,15 @@ export default function App() {
 
       {/* TECH STACK */}
       <Section className="section-alt">
-        <h2 className="section-title">🛠️ Tech Stack</h2>
+        <h2 className="section-title">Tech Stack</h2>
         <div className="tech-grid">
           {[
             { label: "XRP Ledger", sub: "L1 settlement layer" },
-            { label: "MPT", sub: "Multi-Purpose Tokens" },
-            { label: "RLUSD", sub: "USD stablecoin" },
-            { label: "XRPL Hooks", sub: "WebAssembly logic" },
-            { label: "xrpl.js", sub: "Node SDK" },
+            { label: "NFTokenMint", sub: "Lien tokenization" },
+            { label: "xrpl.js", sub: "WebSocket SDK" },
             { label: "React + Vite", sub: "Frontend" },
-            { label: "IPFS", sub: "Document storage" },
+            { label: "Vercel", sub: "Hosting + CI/CD" },
+            { label: "Recharts", sub: "Analytics charts" },
           ].map(({ label, sub }) => (
             <div className="tech-chip" key={label}>
               <span className="tech-label">{label}</span>
@@ -222,45 +232,14 @@ export default function App() {
         </div>
       </Section>
 
-      {/* STATUS */}
-      <Section id="status">
-        <h2 className="section-title">🚀 Status</h2>
-        <div className="status-grid">
-          {[
-            { label: "Wallet generation + funding", done: true },
-            { label: "Trust line creation", done: true },
-            { label: "PILIEN lien issuance with metadata", done: true },
-            { label: "Configurable settlement split", done: true },
-            { label: "First lien tokenized — PI-LIEN-2025-11-001 ($8,500)", done: true },
-            { label: "RLUSD integration", done: false },
-            { label: "XRPL Hooks automation", done: false },
-            { label: "React dashboard", done: false },
-          ].map(({ label, done }) => (
-            <div className="status-row" key={label}>
-              <span className={`status-dot ${done ? "dot-green" : "dot-yellow"}`} />
-              <span className={done ? "" : "muted"}>{label}</span>
-              <Badge color={done ? "green" : "yellow"}>{done ? "Complete" : "Planned"}</Badge>
-            </div>
-          ))}
-        </div>
-        <Card className="tx-card">
-          <p className="tx-label">First lien TX on testnet</p>
-          <code className="tx-hash">{TX_HASH}</code>
-          <a href={EXPLORER} target="_blank" rel="noreferrer" className="btn btn-primary tx-btn">
-            View on XRPL Explorer →
-          </a>
-        </Card>
-      </Section>
-
       {/* COMPLIANCE */}
-      <Section className="section-alt">
-        <h2 className="section-title">🔒 Compliance</h2>
+      <Section id="compliance">
+        <h2 className="section-title">Compliance</h2>
         <div className="grid grid-2">
           {[
-            { label: "HIPAA", detail: "Patient data stays off-chain. IPFS stores encrypted documents; only the hash is anchored on-chain." },
+            { label: "HIPAA", detail: "Patient data stays off-chain. Only anonymized lien metadata is anchored on-chain; no PHI in transaction memos." },
             { label: "UCC Article 9", detail: "Lien metadata and perfection records structured for UCC-9 assignment compliance." },
-            { label: "MO / KS Lien Laws", detail: "Maturity dates and reduction rights reflected in token metadata fields." },
-            { label: "NYDFS (RLUSD)", detail: "RLUSD is a NYDFS-regulated stablecoin — settlement currency selection is compliance-aware." },
+            { label: "MO · TX · NV · IN Statutory Compliance", detail: "Indiana 20% clinic floor enforced in the settlement waterfall. Texas 72-hour filing window advisory. Multi-state policy layer configurable per market." },
             { label: "KYC / AML", detail: "Wallet onboarding designed to integrate identity verification prior to mainnet deployment." },
           ].map(({ label, detail }) => (
             <Card key={label}>
