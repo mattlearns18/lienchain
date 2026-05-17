@@ -292,6 +292,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
   const [step,          setStep]          = useState(0);
   const [txHashes,      setTxHashes]      = useState([]); // array of {success, txHash?, error?, clinicId}
   const [confirmedCount, setConfirmedCount] = useState(0); // successful TX count, stored in state for final-screen render
+  const [runSnapshot,   setRunSnapshot]   = useState(null); // clinicsToSettle frozen at run() call — prevents 0-count after onSettled fires
 
   const settleAmt = waterfall?.onChainAmount ?? caseClinics.reduce((s, c) => s + c.bill, 0);
   const lienCoAmt = waterfall?.lienCoAmt     ?? 0;
@@ -302,6 +303,9 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
   // Clinics that need settling in this run — skip already-settled for idempotent retry
   const clinicsToSettle = caseClinics.filter(c => !c.tx2 || c.settlementError);
   const isRetryRun      = clinicsToSettle.length < caseClinics.length;
+  // Use the snapshot once the run has started — prevents parent re-render (after onSettled writes tx2)
+  // from zeroing out the clinic list before the done-screen finishes displaying.
+  const effectiveClinics = runSnapshot ?? clinicsToSettle;
 
   const effectiveLienCoPct = (lienCoAmt + clinicAmt) > 0
     ? Math.round(lienCoAmt / (lienCoAmt + clinicAmt) * 100)
@@ -309,17 +313,19 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
   const hasInViolation  = lien.market === "IN" && effectiveLienCoPct > 80;
   const hasUnusualSplit = effectiveLienCoPct < 30 || effectiveLienCoPct > 85;
 
-  // Animation steps — sized to the clinics being settled in this run
-  const steps = (clinicsToSettle.length > 1 || isRetryRun)
+  // Animation steps — sized to the clinics being settled in this run.
+  // Use effectiveClinics (frozen snapshot post-run) so the step list doesn't collapse to
+  // zero entries when the parent re-renders after onSettled writes tx2 to localStorage.
+  const steps = (effectiveClinics.length > 1 || isRetryRun)
     ? [
         { label: "Verifying attorney credentials", detail: "Bar # on file" },
-        ...clinicsToSettle.map((c, i) => ({
-          label: `Settling clinic ${i + 1} of ${clinicsToSettle.length}`,
+        ...effectiveClinics.map((c, i) => ({
+          label: `Settling clinic ${i + 1} of ${effectiveClinics.length}`,
           detail: c.clinic,
         })),
         {
           label:  "All settlements confirmed",
-          detail: `${clinicsToSettle.length} TX${clinicsToSettle.length === 1 ? "" : "s"} on XRPL`,
+          detail: `${effectiveClinics.length} TX${effectiveClinics.length === 1 ? "" : "s"} on XRPL`,
         },
       ]
     : [
@@ -330,6 +336,10 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
       ];
 
   async function run() {
+    // Freeze the clinic list before any awaits — the parent will re-render after onSettled
+    // writes tx2 to localStorage, which would cause clinicsToSettle to compute as [] and
+    // collapse the step list and TX count to 0.
+    setRunSnapshot([...clinicsToSettle]);
     setPhase("running");
     setStep(0);
 
@@ -462,7 +472,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
             <div className="ap-steps">
               {steps.map((s, i) => {
                 const isLastStep     = i === steps.length - 1;
-                const totalAttempted = clinicsToSettle.length;
+                const totalAttempted = effectiveClinics.length; // use frozen snapshot, not live filter
                 // Override the final step's detail once results are in (confirmedCount from state).
                 const detail = phase === "done" && isLastStep && totalAttempted > 1
                   ? confirmedCount === totalAttempted
@@ -484,14 +494,14 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
             </div>
             {phase === "done" && (
               <>
-                {/* One result row per settled clinic */}
+                {/* One result row per settled clinic — use effectiveClinics (frozen snapshot) */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {clinicsToSettle.map((c, i) => {
+                  {effectiveClinics.map((c, i) => {
                     const r = txHashes[i];
                     return (
                       <div key={c.id} className="ap-hash-box">
                         <div className="ap-hash-label">
-                          {clinicsToSettle.length > 1 ? c.clinic : "Transaction Hash"}
+                          {effectiveClinics.length > 1 ? c.clinic : "Transaction Hash"}
                         </div>
                         {r?.success ? (
                           <a
