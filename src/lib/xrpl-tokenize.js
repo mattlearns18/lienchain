@@ -1,12 +1,12 @@
 /**
  * xrpl-tokenize.js
  *
- * Real XRPL testnet tokenization using the xrpl WebSocket Client.
+ * XRPL NFToken lien issuance via the xrpl WebSocket Client.
  * WebSocket bypasses the CORS restriction that blocks HTTP JSON-RPC fetch()
  * calls from the browser.
  *
  * Security: seed is read from getNetworkConfig().seed (network.js).
- * Testnet seed only — never use a real-funds seed here.
+ * Network is controlled by VITE_NETWORK — never use a mainnet seed on testnet.
  */
 
 import { Client, Wallet } from "xrpl";
@@ -28,7 +28,7 @@ export async function generateCurrencyCode(tokenId) {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
- * Issue a lien as an on-chain NFT record on XRPL testnet.
+ * Issue a lien as an on-chain NFT record on XRPL.
  *
  * Uses NFTokenMint (single-party, no Destination needed) so the LienCo wallet
  * alone produces a verifiable, immutable on-chain record. A self-payment IOU

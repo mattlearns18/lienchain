@@ -474,7 +474,8 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
                 const isLastStep     = i === steps.length - 1;
                 const totalAttempted = effectiveClinics.length; // use frozen snapshot, not live filter
                 // Override the final step's detail once results are in (confirmedCount from state).
-                const detail = phase === "done" && isLastStep && totalAttempted > 1
+                // Applies to both single- and multi-clinic so the done screen always reads "N TX confirmed on XRPL".
+                const detail = phase === "done" && isLastStep
                   ? confirmedCount === totalAttempted
                     ? `${confirmedCount} TX${confirmedCount === 1 ? "" : "s"} confirmed on XRPL`
                     : `${confirmedCount} of ${totalAttempted} TXs confirmed on XRPL`
@@ -501,7 +502,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
                     return (
                       <div key={c.id} className="ap-hash-box">
                         <div className="ap-hash-label">
-                          {effectiveClinics.length > 1 ? c.clinic : "Transaction Hash"}
+                          {c.clinic}
                         </div>
                         {r?.success ? (
                           <a

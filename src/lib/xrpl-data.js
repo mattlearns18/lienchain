@@ -1,6 +1,6 @@
-// XRPL Testnet data fetching via WebSocket (xrpl.js Client).
+// XRPL data fetching via WebSocket (xrpl.js Client). Network is selected by getNetworkConfig().
 //
-// Browsers block direct HTTP JSON-RPC POSTs to the XRPL testnet endpoint
+// Browsers block direct HTTP JSON-RPC POSTs to the XRPL endpoint
 // (CORS), which previously caused every balance/activity fetch here to
 // reject and fall through to an em-dash placeholder. WebSocket is exempt
 // from that restriction, so this module now mirrors the approach already
