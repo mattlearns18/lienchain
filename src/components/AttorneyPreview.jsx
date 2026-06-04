@@ -287,7 +287,7 @@ function WaterfallCard({ clinics, onWaterfallChange }) {
 }
 
 // ── SettleModal ───────────────────────────────────────────────────────────────
-function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
+function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled, patientNet = 0, patientDisbursement = null, isOperatorView = false, onOpenPatientModal }) {
   const [phase,         setPhase]         = useState("confirm");
   const [step,          setStep]          = useState(0);
   const [txHashes,      setTxHashes]      = useState([]); // array of {success, txHash?, error?, clinicId}
@@ -404,7 +404,7 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
       return row?.lienCoAmt ?? Math.round(c.bill * (c.split ?? 70) / 100);
     });
 
-    onSettled?.(caseId, caseClinics.map(c => c.id), allHashes, recoveries, allResults);
+    onSettled?.(caseId, caseClinics.map(c => c.id), allHashes, recoveries, allResults, waterfall?.patientNet ?? 0);
   }
 
   const EXPLORER = getNetworkConfig().explorer;
@@ -439,7 +439,41 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled }) {
                 <span className="ap-wf-row-label ap-wf-indent ap-wf-green">To Clinic(s)</span>
                 <span className="ap-wf-row-val ap-wf-green">{usd(clinicAmt)}</span>
               </div>
+              {patientNet > 0 && (
+                <div className="ap-wf-row">
+                  <span className="ap-wf-row-label ap-wf-indent" style={{ color: "var(--muted)" }}>Patient Net Recovery</span>
+                  <span className="ap-wf-row-val" style={{ color: "var(--muted)" }}>{usd(patientNet)}</span>
+                </div>
+              )}
             </div>
+
+            {/* Patient disbursement status strip — operator-only, when patient net > 0 */}
+            {isOperatorView && patientNet > 0 && (
+              patientDisbursement ? (
+                <div className="ap-fiat-strip" style={{ marginTop: 8 }}>
+                  <div className="ap-fiat-strip-main">
+                    <span className="ap-fiat-check">✓</span>
+                    <span>
+                      <strong>Patient disbursed</strong> — {usd(patientDisbursement.amount)} on{" "}
+                      {parseLocalDate(patientDisbursement.disbursedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} by {patientDisbursement.confirmedBy}
+                    </span>
+                  </div>
+                  <div className="ap-fiat-strip-ref">
+                    Reference: {patientDisbursement.reference}
+                    <button className="ap-fiat-update" onClick={onOpenPatientModal}>Update</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(251,191,36,0.08)", borderRadius: 6, border: "1px solid rgba(251,191,36,0.25)" }}>
+                  <div style={{ color: "#fbbf24", fontSize: "0.85rem", marginBottom: 6 }}>
+                    ⚠ Patient disbursement not yet recorded — {usd(patientNet)} owed to patient
+                  </div>
+                  <button className="ap-fiat-btn" onClick={onOpenPatientModal}>
+                    Mark Patient Disbursed
+                  </button>
+                </div>
+              )
+            )}
 
             {hasInViolation && (
               <div className="ap-flag-banner ap-flag-red">
@@ -678,6 +712,87 @@ function FiatReceiptModal({ expectedAmount, initial, onSave, onClose }) {
   );
 }
 
+// ── PatientDisbursalModal ─────────────────────────────────────────────────────
+// Operator-only modal to record the attorney's patient disbursement from trust account.
+// Mirrors FiatReceiptModal — same form structure, separate audit record.
+function PatientDisbursalModal({ expectedAmount, initial, onSave, onClose }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [amount,      setAmount]      = useState(initial?.amount      ?? expectedAmount);
+  const [disbursedAt, setDisbursedAt] = useState(initial?.disbursedAt ?? todayStr);
+  const [reference,   setReference]   = useState(initial?.reference   ?? "");
+  const [confirmedBy, setConfirmedBy] = useState(initial?.confirmedBy ?? "");
+  const [err,         setErr]         = useState("");
+
+  const amountNum = parseFloat(amount) || 0;
+  const mismatch  = Math.abs(amountNum - expectedAmount) > 1;
+
+  function submit(e) {
+    e.preventDefault();
+    if (!amount || amountNum <= 0) return setErr("Amount is required.");
+    if (!disbursedAt)              return setErr("Date disbursed is required.");
+    if (!reference.trim())         return setErr("Reference is required.");
+    if (!confirmedBy.trim())       return setErr("Confirmed by is required.");
+    onSave({ amount: amountNum, disbursedAt, reference: reference.trim(), confirmedBy: confirmedBy.trim() });
+  }
+
+  return (
+    <div className="ap-overlay" onClick={onClose}>
+      <div className="ap-modal" onClick={e => e.stopPropagation()}>
+        <button className="ap-close" onClick={onClose}>×</button>
+        <h3 className="ap-modal-title">Mark Patient Disbursed</h3>
+        <p className="ap-modal-sub">Record the attorney's disbursement to the patient from their trust account.</p>
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <label className="db-form-label">Amount Disbursed ($)
+            <input
+              className="db-form-input"
+              type="number" min="0" step="0.01"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              placeholder={String(expectedAmount)}
+            />
+            {mismatch && (
+              <span style={{ fontSize: "0.78rem", color: "#fbbf24", marginTop: 4, display: "block" }}>
+                Amount differs from expected {usd(expectedAmount)} by {usd(Math.abs(amountNum - expectedAmount))}. Confirm before saving.
+              </span>
+            )}
+          </label>
+          <label className="db-form-label">Date Disbursed
+            <input
+              className="db-form-input"
+              type="date"
+              value={disbursedAt}
+              onChange={e => setDisbursedAt(e.target.value)}
+            />
+          </label>
+          <label className="db-form-label">Reference
+            <input
+              className="db-form-input"
+              type="text"
+              value={reference}
+              onChange={e => setReference(e.target.value)}
+              placeholder="Trust account check #, wire ref, or ACH ref"
+            />
+          </label>
+          <label className="db-form-label">Confirmed by
+            <input
+              className="db-form-input"
+              type="text"
+              value={confirmedBy}
+              onChange={e => setConfirmedBy(e.target.value)}
+              placeholder="Your initials or name"
+            />
+          </label>
+          {err && <div className="db-form-err">{err}</div>}
+          <div className="db-modal-actions">
+            <button type="button" className="db-btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="db-btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── CaseReductionsPanel ───────────────────────────────────────────────────────
 // Shows all reduction requests submitted for the selected case — view-only in Phase 5.
 // Each clinic on the case can see requests from other clinics for transparency.
@@ -717,7 +832,7 @@ function CaseReductionsPanel({ caseId, reductions }) {
 }
 
 // ── Main exported component ───────────────────────────────────────────────────
-export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases, onInvite, isOperatorView = false, onFiatReceiptSave }) {
+export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases, onInvite, isOperatorView = false, onFiatReceiptSave, onPatientDisbursementSave }) {
   // Group liens by caseId so multi-clinic cases show as one entry
   const caseMap = {};
   for (const l of liens) {
@@ -735,9 +850,10 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
   };
 
   const [selectedCaseId, setSelectedCaseId] = useState(resolveInitial);
-  const [showSettle,    setShowSettle]    = useState(false);
-  const [showReduction, setShowReduction] = useState(false);
-  const [showFiatModal, setShowFiatModal] = useState(false);
+  const [showSettle,        setShowSettle]        = useState(false);
+  const [showReduction,     setShowReduction]     = useState(false);
+  const [showFiatModal,     setShowFiatModal]     = useState(false);
+  const [showPatientModal,  setShowPatientModal]  = useState(false);
   const [toast,         setToast]         = useState("");
   const [waterfall,     setWaterfall]     = useState(null);
   const [reductions,    setReductions]    = useState(() => loadReductionRequests());
@@ -777,7 +893,9 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
 
   // Fiat receipt for the selected case (operator-view only)
   const caseObj    = cases?.find(c => c.caseId === selectedCaseId);
-  const fiatReceipt = caseObj?.fiatReceipt ?? null;
+  const fiatReceipt          = caseObj?.fiatReceipt          ?? null;
+  const patientDisbursement  = caseObj?.patientDisbursement  ?? null;
+  const patientNet           = waterfall?.patientNet          ?? 0;
   // Expected fiat = full net pool the attorney wires to LienCo (netAvailable).
   // Use waterfall result when available; otherwise compute from default inputs
   // (gross = totalBills, attyFee = 33%, costs = $0 — same defaults as WaterfallCard)
@@ -801,6 +919,17 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
           onClose={() => setShowFiatModal(false)}
         />
       )}
+      {showPatientModal && isOperatorView && (
+        <PatientDisbursalModal
+          expectedAmount={patientNet}
+          initial={patientDisbursement}
+          onSave={(disbursement) => {
+            onPatientDisbursementSave?.(selectedCaseId, disbursement);
+            setShowPatientModal(false);
+          }}
+          onClose={() => setShowPatientModal(false)}
+        />
+      )}
       {showSettle && (
         <SettleModal
           lien={lien}
@@ -808,6 +937,10 @@ export default function AttorneyPreview({ liens, initialCaseId, onSettled, cases
           waterfall={waterfall}
           onClose={() => setShowSettle(false)}
           onSettled={onSettled}
+          patientNet={patientNet}
+          patientDisbursement={patientDisbursement}
+          isOperatorView={isOperatorView}
+          onOpenPatientModal={() => setShowPatientModal(true)}
         />
       )}
       {showReduction && (

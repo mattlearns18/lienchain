@@ -167,6 +167,12 @@ function CaseGroupRow({ caseId, clinics, onPreview, caseObj, onInvite, onRetryCl
               : caseObj?.attorneyAssignment?.sentAt
               ? <span className="db-invite-badge db-invite-invited">Invited</span>
               : null}
+            {/* Patient disbursement pill — only for settled cases where patient net > 0 */}
+            {caseObj?.patientNetRecovery > 0 && (
+              caseObj?.patientDisbursement
+                ? <span className="db-invite-badge db-invite-accepted" title="Patient disbursement recorded">Patient ✓</span>
+                : <span className="db-invite-badge db-invite-invited"  title="Patient disbursement pending">Patient ⌛</span>
+            )}
             {isMulti && (
               <span className="db-clinics-badge">{clinics.length} clinics</span>
             )}
@@ -819,12 +825,21 @@ export default function Dashboard() {
     });
   };
 
+  const savePatientDisbursement = (caseId, disbursement) => {
+    setCases(prev => {
+      const updated = prev.map(c => c.caseId !== caseId ? c : { ...c, patientDisbursement: disbursement });
+      saveCases(updated);
+      return updated;
+    });
+  };
+
   // Called by AttorneyPreview when a settlement run completes (initial or retry).
-  // lienIds:    string[]  — all clinic lien IDs on the case
-  // hashes:     string[]  — one TX hash per clinic (null on failure), parallel to lienIds
-  // recoveries: number[]  — per-clinic LienCo recovery amount from calcWaterfall
-  // results:    object[]  — full result objects {success, txHash?, error?} per clinic
-  const handleSettled = (caseId, lienIds, hashes = [], recoveries = [], results = []) => {
+  // lienIds:           string[]  — all clinic lien IDs on the case
+  // hashes:            string[]  — one TX hash per clinic (null on failure), parallel to lienIds
+  // recoveries:        number[]  — per-clinic LienCo recovery amount from calcWaterfall
+  // results:           object[]  — full result objects {success, txHash?, error?} per clinic
+  // patientNetRecovery: number   — patient's net share from waterfall (0 if pool was exhausted)
+  const handleSettled = (caseId, lienIds, hashes = [], recoveries = [], results = [], patientNetRecovery = 0) => {
     const settledAt = new Date().toISOString();
 
     // Compute updated lien records synchronously from current liens state
@@ -868,11 +883,14 @@ export default function Dashboard() {
       }
     }
 
-    // Roll case status up
+    // Roll case status up; also store patientNetRecovery so the Liens tab pill
+    // can show pending/confirmed state without re-running the waterfall.
     setCases(prev => {
       const updated = prev.map(c => {
         if (c.caseId !== caseId) return c;
-        return { ...c, status: newCaseStatus };
+        const patch = { status: newCaseStatus };
+        if (patientNetRecovery > 0) patch.patientNetRecovery = patientNetRecovery;
+        return { ...c, ...patch };
       });
       saveCases(updated);
       return updated;
@@ -960,7 +978,7 @@ export default function Dashboard() {
 
         {/* ATTORNEY VIEW TAB */}
         {activeTab === "attorney" && (
-          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} cases={cases} onInvite={openInvite} isOperatorView={true} onFiatReceiptSave={saveFiatReceipt} />
+          <AttorneyPreview liens={liens} initialCaseId={previewCaseId} onSettled={handleSettled} cases={cases} onInvite={openInvite} isOperatorView={true} onFiatReceiptSave={saveFiatReceipt} onPatientDisbursementSave={savePatientDisbursement} />
         )}
 
         {/* DASHBOARD TAB — overview stats + wallet panel + live activity */}
