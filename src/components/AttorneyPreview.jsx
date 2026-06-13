@@ -5,6 +5,7 @@ import { loadReductionRequests } from "../lib/store.js";
 import { MARKET_INFO } from "../lib/markets.js";
 import { getNetworkConfig } from "../lib/network.js";
 import { executeSettlementPayment } from "../lib/settle-onchain.js";
+import { calcWaterfall } from "../lib/waterfall.js";
 
 const usd = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -14,16 +15,17 @@ function parseLocalDate(ymd) {
   return new Date(+y, +m - 1, +d);
 }
 
-// ── Multi-clinic waterfall calculator (Phase 6: IN floor enforcement) ────────
+// ── Multi-clinic waterfall calculator ────────────────────────────────────────
 //
-// Algorithm:
-//   1. Pro-rata distribute netAvailable across all clinics.
-//   2. For each IN clinic, compute floor = ceil(bill × clinicFloorPct × 100) / 100.
-//   3. Find the IN clinic with the largest shortfall vs. floor.
-//   4. Raise it to floor (or to remaining pool if pool can't cover).
-//   5. Deduct raise from remaining pool, remove raised clinic from re-distribution.
-//   6. Re-pro-rata remaining pool across unfixed clinics. Repeat from 2.
-//   Convergence: at most N iterations for N IN clinics.
+// Backtest hardening (2026-06): this used to carry its own copy of the IN-floor
+// waterfall algorithm. That duplicate drifted from src/lib/waterfall.js — in
+// pool-exhausted multi-IN cases it tagged a different set of clinics with FLOOR,
+// so the operator's "Attorney View" preview and the real /attorney/:caseId portal
+// (which already uses calcWaterfall) disagreed on the compliance display.
+//
+// It is now a thin wrapper over the single source of truth, calcWaterfall. The
+// wrapper only adds the attorney-fee math + the legacy return-shape aliases this
+// component's children (SettleModal / SplitVisual / WaterfallCard) consume.
 //
 // @param {number} grossNum
 // @param {number} attyFeePct
@@ -32,113 +34,30 @@ function parseLocalDate(ymd) {
 function calcMultiClinicWaterfall(grossNum, attyFeePct, costsNum, clinics) {
   const attyFeeAmt   = Math.round(grossNum * attyFeePct / 100);
   const netAvailable = grossNum - attyFeeAmt - costsNum;
-  const totalBills   = clinics.reduce((s, c) => s + c.bill, 0);
   const inFloorPct   = MARKET_INFO.IN?.policy?.clinicFloorPct ?? 0.20;
 
-  let clinicRows, patientNet;
-  let floorAppliedCount = 0;
-  let poolExhausted     = false;
+  const r = calcWaterfall(Math.max(0, netAvailable), clinics, inFloorPct);
 
-  if (netAvailable <= 0) {
-    clinicRows = clinics.map(c => ({ ...c, recovery: 0, lienCoAmt: 0, clinicAmt: 0, floorApplied: false }));
-    patientNet = netAvailable;
-  } else if (netAvailable >= totalBills) {
-    // Full recovery — no shortfall, floor irrelevant
-    clinicRows = clinics.map(c => {
-      const recovery  = c.bill;
-      const lienCoAmt = recovery * c.split / 100;
-      const clinicAmt = recovery - lienCoAmt;
-      return { ...c, recovery, lienCoAmt, clinicAmt, floorApplied: false };
-    });
-    patientNet = netAvailable - totalBills;
-  } else {
-    // Shortfall branch: start with pure pro-rata, then enforce IN floors iteratively
-    const recoveries   = new Map(clinics.map(c => [c.id, totalBills > 0 ? (c.bill / totalBills) * netAvailable : 0]));
-    const floorApplied = new Map(clinics.map(c => [c.id, false]));
-    const fixed        = new Set(); // clinics whose recovery is now locked
-
-    let poolRemaining = netAvailable;
-
-    // Iterative IN floor enforcement
-    let changed = true;
-    while (changed) {
-      changed = false;
-
-      // Find unfixed IN clinics below their floor; pick largest gap first
-      let worstId   = null;
-      let worstGap  = 0;
-      for (const c of clinics) {
-        if (fixed.has(c.id) || c.market !== "IN") continue;
-        const floor = Math.ceil(c.bill * inFloorPct * 100) / 100;
-        const gap   = floor - recoveries.get(c.id);
-        if (gap > 0.005 && gap > worstGap) { worstGap = gap; worstId = c.id; }
-      }
-
-      if (!worstId) break; // all IN clinics at or above floor
-
-      const targetClinic = clinics.find(c => c.id === worstId);
-      const floor        = Math.ceil(targetClinic.bill * inFloorPct * 100) / 100;
-      const currentRec   = recoveries.get(worstId);
-      const raise        = floor - currentRec;
-
-      // Amount currently allocated to unfixed non-target clinics = what we can take back
-      const unfixedOthers = clinics.filter(c => !fixed.has(c.id) && c.id !== worstId);
-      const poolFromOthers = unfixedOthers.reduce((s, c) => s + recoveries.get(c.id), 0);
-
-      if (raise <= poolFromOthers) {
-        // Raise to floor; take the raise away from unfixed others pro-rata by bill
-        recoveries.set(worstId, floor);
-        floorApplied.set(worstId, true);
-        fixed.add(worstId);
-        poolRemaining -= currentRec; // remove old allocation from pool tracking
-        poolRemaining -= raise;      // lock in floor amount
-
-        // Re-pro-rata remaining pool among unfixed others
-        const sumOtherBills = unfixedOthers.reduce((s, c) => s + c.bill, 0);
-        const poolForOthers = poolFromOthers - raise;
-        for (const c of unfixedOthers) {
-          recoveries.set(c.id, sumOtherBills > 0 ? (c.bill / sumOtherBills) * poolForOthers : 0);
-        }
-        changed = true;
-      } else {
-        // Pool can't cover the full raise — give this clinic whatever's left from others
-        const partialRaise = poolFromOthers;
-        recoveries.set(worstId, currentRec + partialRaise);
-        floorApplied.set(worstId, true);
-        fixed.add(worstId);
-        for (const c of unfixedOthers) { recoveries.set(c.id, 0); fixed.add(c.id); }
-        poolExhausted = true;
-        changed = true;
-      }
-    }
-
-    clinicRows = clinics.map(c => {
-      const recovery  = recoveries.get(c.id);
-      const lienCoAmt = recovery * c.split / 100;
-      const clinicAmt = recovery - lienCoAmt;
-      const fa        = floorApplied.get(c.id);
-      if (fa) floorAppliedCount++;
-      return { ...c, recovery, lienCoAmt, clinicAmt, floorApplied: fa };
-    });
-    // Deduplicate floorAppliedCount (map iterates once per clinic above)
-    floorAppliedCount = clinicRows.filter(r => r.floorApplied).length;
-    patientNet = 0;
-  }
-
-  const onChainTotal = clinicRows.reduce((s, r) => s + r.recovery, 0);
-  const totalLienCo  = clinicRows.reduce((s, r) => s + r.lienCoAmt, 0);
-  const totalClinic  = clinicRows.reduce((s, r) => s + r.clinicAmt, 0);
+  // Preserve legacy patientNet semantics: when fees+costs exceed the gross the
+  // old inline version surfaced the signed (negative) residual so the existing
+  // isPatientNeg / isNetNeg banner logic keeps working. calcWaterfall floors
+  // patientNet at 0, so restore the signed value in that one branch.
+  const patientNet = netAvailable <= 0 ? netAvailable : r.patientNet;
 
   return {
     grossNum, attyFeePct, attyFeeAmt, costsNum, netAvailable,
-    totalBills, onChainTotal, totalLienCo, totalClinic, patientNet,
-    clinicRows,
-    floorAppliedCount,
-    poolExhausted,
+    totalBills:        r.totalBills,
+    onChainTotal:      r.onChainTotal,
+    totalLienCo:       r.totalLienCo,
+    totalClinic:       r.totalClinic,
+    patientNet,
+    clinicRows:        r.clinicRows,
+    floorAppliedCount: r.floorAppliedCount,
+    poolExhausted:     r.poolExhausted,
     // Backward-compat aliases for SettleModal / SplitVisual
-    onChainAmount: onChainTotal,
-    lienCoAmt:     totalLienCo,
-    clinicAmt:     totalClinic,
+    onChainAmount: r.onChainTotal,
+    lienCoAmt:     r.totalLienCo,
+    clinicAmt:     r.totalClinic,
   };
 }
 

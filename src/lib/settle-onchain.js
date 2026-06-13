@@ -48,6 +48,15 @@ export function resolveDestination(clinic) {
  * @returns {Promise<{ success: boolean, txHash?: string, ledgerIndex?: number, error?: string }>}
  */
 export async function executeSettlementPayment({ caseId, lienId, clinic, amount }) {
+  // Nothing to remit. The clinic's payable share can legitimately round to $0 —
+  // e.g. an Indiana floor raise exhausted the pool and zeroed this clinic, or the
+  // LienCo split is 100%. XRPL rejects a 0-value Payment (temBAD_AMOUNT), and the
+  // failure would spuriously flip the whole case to "Partial Settlement". A clinic
+  // owed nothing is trivially settled, so return a successful no-op skip instead.
+  if (!(amount > 0)) {
+    return { success: true, skipped: true, txHash: null, ledgerIndex: null };
+  }
+
   const { wssUrl, seed } = getNetworkConfig();
 
   const destination = resolveDestination(clinic);
@@ -79,12 +88,20 @@ export async function executeSettlementPayment({ caseId, lienId, clinic, amount 
     // TODO(phase10): mainnet currency = issued stablecoin Amount object
     // (e.g. RLUSD/USDC per MAINNET-READINESS.md). Do NOT use this scaling on mainnet.
     const scaleDollarsToXrp = (usd) => xrpToDrops((Math.max(0.000001, usd) / 1000).toFixed(6));
+    const amountDrops = scaleDollarsToXrp(amount);
+
+    // Testnet 1000:1 scaling can round a sub-tenth-of-a-cent share down to 0 drops,
+    // which XRPL would reject (temBAD_AMOUNT). Such a share is economically zero —
+    // skip as a successful no-op rather than letting it fail the settlement.
+    if (Number(amountDrops) <= 0) {
+      return { success: true, skipped: true, txHash: null, ledgerIndex: null };
+    }
 
     const tx = {
       TransactionType: "Payment",
       Account:         wallet.classicAddress,
       Destination:     destination,
-      Amount:          scaleDollarsToXrp(amount), // TODO(phase10): mainnet currency = issued stablecoin
+      Amount:          amountDrops, // TODO(phase10): mainnet currency = issued stablecoin
       Memos: [{
         Memo: {
           MemoType: Buffer.from("LienChain-ClinicPayout").toString("hex").toUpperCase(),
