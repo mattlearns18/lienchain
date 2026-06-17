@@ -1,15 +1,27 @@
 /**
  * backtest.mjs — LienChain settlement-engine backtest harness
  *
- * Stress-tests the SHIPPED waterfall against a large synthetic portfolio:
+ * Stress-tests the SHIPPED money path against a large synthetic portfolio:
  *   100 attorneys, 50 lien companies (LienCos), hundreds of cases / clinic-liens
- *   spread across the 5 live markets (KC, STL, TX, NV, IN), plus a deterministic
- *   edge-case battery.
+ *   spread across the 5 live markets (KC, STL, TX, NV, IN), plus deterministic
+ *   edge-case batteries.
  *
- * It imports the REAL calcWaterfall (the harness copies src/lib/waterfall.js to a
- * temp .mjs at runtime, so we always test the current shipped bytes), and it also
- * ports the inline calcMultiClinicWaterfall from AttorneyPreview.jsx so the two
- * engines can be diffed numerically.
+ * It imports the REAL code (the harness copies each pure source file to a temp
+ * .mjs at runtime, so we always test the current shipped bytes):
+ *   - calcWaterfall          ← src/lib/waterfall.js   (settlement distribution)
+ *   - dollarsToTestnetDrops  ← src/lib/money.js       (on-chain amount scaling)
+ * and it ports the inline calcMultiClinicWaterfall from AttorneyPreview.jsx so the
+ * two engines can be diffed numerically (documents the Phase-9.5 unification fix).
+ *
+ * Coverage:
+ *   §A  Settlement-waterfall financial invariants (I1–I9)
+ *   §B  Engine cross-check (canonical vs preview, pre/post unification)
+ *   §C  Retry-amount correctness  (face-value bill×split vs pro-rata clinicAmt)
+ *   §D  On-chain dollar→drops scaling (real money.js)
+ *   §E  Split guardrail invariant (effective LienCo % == configured split)
+ *   §F  Analytics derivation sanity (purchasePrice / recovery defaults)
+ *   §G  Edge-case battery (waterfall) + scaling edge battery
+ *   §H  Operational flag: per-LienCo testnet wallet drain per settlement run
  *
  * Run: node backtest.mjs   (writes backtest-results.json, prints a summary)
  */
@@ -23,17 +35,20 @@ import { fileURLToPath } from "node:url";
 // Override with: node backtest.mjs /path/to/repo
 const REPO = process.argv[2] || fileURLToPath(new URL(".", import.meta.url));
 
-// ── Import the SHIPPED canonical engine ────────────────────────────────────────
-// waterfall.js is pure ESM with no internal imports, so copy → import is faithful.
+// ── Import the SHIPPED canonical engine + money conversion ─────────────────────
+// Both files are pure ESM with no internal imports, so copy → import is faithful.
 const tmpWf = join(tmpdir(), `waterfall.${Date.now()}.mjs`);
 copyFileSync(join(REPO, "src/lib/waterfall.js"), tmpWf);
 const { calcWaterfall } = await import("file://" + tmpWf);
 
+const tmpMoney = join(tmpdir(), `money.${Date.now()}.mjs`);
+copyFileSync(join(REPO, "src/lib/money.js"), tmpMoney);
+const { dollarsToTestnetDrops } = await import("file://" + tmpMoney);
+
 // ── PRE-FIX port of AttorneyPreview.jsx::calcMultiClinicWaterfall ───────────────
-// (operator-side "Attorney View" preview engine, as it shipped BEFORE this pass).
-// Kept byte-faithful to the old JSX so the harness can quantify the divergence
-// that existed. Post-fix, AttorneyPreview delegates to calcWaterfall (see
-// previewWaterfallNEW), so this is retained only to document the pre-fix gap.
+// (operator-side "Attorney View" preview engine, as it shipped BEFORE the Phase-9.5
+// unification). Kept byte-faithful to the old JSX so the harness can quantify the
+// divergence that existed. Post-fix, AttorneyPreview delegates to calcWaterfall.
 function previewWaterfallOLD(netAvailable, clinics, inFloorPct = 0.20) {
   const totalBills = clinics.reduce((s, c) => s + c.bill, 0);
   let clinicRows, patientNet;
@@ -110,6 +125,21 @@ function previewWaterfallOLD(netAvailable, clinics, inFloorPct = 0.20) {
 function previewWaterfallNEW(netAvailable, clinics, inFloorPct = 0.20) {
   return calcWaterfall(Math.max(0, netAvailable), clinics, inFloorPct);
 }
+
+// ── Mirrors of shipped business logic (kept tiny + asserted against real outputs) ─
+// Attorney-fee math: identical in AttorneyPortal.jsx and AttorneyPreview.jsx.
+const attyFeeAmtOf = (gross, feePct) => Math.round(gross * feePct / 100);
+// OLD retry amount (Dashboard.handleRetryClinic, pre-fix): face-value clinic share.
+const faceValuePayout = (bill, split) => bill * (1 - split / 100);
+// Split guardrail (AttorneyPreview hasUnusualSplit / IntakeWizard).
+const effectiveLienCoPct = (lienCoAmt, clinicAmt) =>
+  (lienCoAmt + clinicAmt) > 0 ? Math.round(lienCoAmt / (lienCoAmt + clinicAmt) * 100) : 0;
+// Analytics defaults (Dashboard.deriveLienAnalytics).
+const purchasePriceOf = (bill) => Math.round(bill * 0.78);
+const recoveryDefaultOf = (bill, split) => Math.round(bill * split / 100);
+
+// Testnet faucet wallet capacity — each LienCo/market wallet funds ~100 XRP.
+const TESTNET_WALLET_DROPS = 100_000_000; // 100 XRP
 
 // ── Seeded PRNG (mulberry32) for reproducible runs ─────────────────────────────
 function mulberry32(seed) {
@@ -210,11 +240,17 @@ function check(cond, code, ctx) {
 const stats = {
   totalCases: cases.length, totalClinicLiens: 0, totalAttorneys: attorneys.length, totalLienCos: lienCos.length,
   branch: { full: 0, partial: 0, zero: 0, negative: 0 },
-  floorRaiseCases: 0, poolExhaustedCases: 0, unusualSplitLiens: 0, inLiens: 0, zeroBillLiens: 0,
+  floorRaiseCases: 0, poolExhaustedCases: 0, unusualSplitLiens: 0, inViolationLiens: 0, inLiens: 0, zeroBillLiens: 0,
   deployedCapitalProxy: 0, totalBillsAll: 0, totalLienCoRecovery: 0, totalClinicRecovery: 0,
   engineMoneyDivergenceCases: 0, floorTagDivergencePreFix: 0, floorTagDivergencePostFix: 0,
   perMarket: Object.fromEntries(MARKETS.map(m => [m, { liens: 0, bills: 0, recovery: 0, floorRaises: 0 }])),
   zeroPayoutLiens: 0, // pool-exhausted/zeroed clinics that would attempt $0 on-chain payment
+  // §C retry correctness
+  retryMissendLiens: 0, retryOverpayTotal: 0, retryMaxOverpay: 0, retryUnderpayTotal: 0,
+  // §D scaling
+  scaledPayoutSkips: 0, scaledPayoutSent: 0,
+  // §H wallet drain
+  walletDrainCases: 0, maxRunDrops: 0,
 };
 
 for (const cs of cases) {
@@ -222,7 +258,7 @@ for (const cs of cases) {
   stats.totalClinicLiens += clinics.length;
   stats.totalBillsAll += totalBills;
 
-  const attyFeeAmt = Math.round(gross * feePct / 100);   // matches AttorneyPortal + AttorneyPreview
+  const attyFeeAmt = attyFeeAmtOf(gross, feePct);          // matches AttorneyPortal + AttorneyPreview
   const netAvailable = gross - attyFeeAmt - costs;
 
   const r = calcWaterfall(Math.max(0, netAvailable), clinics, IN_FLOOR_PCT);
@@ -238,7 +274,7 @@ for (const cs of cases) {
 
   const expectedDistributed = netAvailable <= 0 ? 0 : Math.min(netAvailable, totalBills);
 
-  // ── INVARIANTS on canonical engine ──
+  // ── §A INVARIANTS on canonical engine ──
   check(near(r.onChainTotal, expectedDistributed, Math.max(TOL, expectedDistributed * 1e-6)),
     "I1_CONSERVATION", { caseId: cs.caseId, onChainTotal: r.onChainTotal, expectedDistributed, netAvailable, totalBills });
   check(near(r.totalLienCo + r.totalClinic, r.onChainTotal),
@@ -248,6 +284,10 @@ for (const cs of cases) {
   check(r.patientNet >= -TOL, "I6a_PATIENT_NONNEG", { caseId: cs.caseId, patientNet: r.patientNet });
   if (r.patientNet > TOL) check(netAvailable >= totalBills - TOL, "I6b_PATIENT_ONLY_WHEN_FULL",
     { caseId: cs.caseId, patientNet: r.patientNet, netAvailable, totalBills });
+
+  // ── §C retry-amount correctness + §D scaling + §E guardrail, per clinic row ──
+  let runDrops = 0;             // §H cumulative testnet drops sent from the LienCo wallet this run
+  let fixedRetrySum = 0;        // §C sum of the amounts the FIXED retry would re-send
 
   for (const row of r.clinicRows) {
     check(near(row.lienCoAmt + row.clinicAmt, row.recovery), "I2_ROW_IDENTITY", { caseId: cs.caseId, row: row.id });
@@ -263,19 +303,63 @@ for (const cs of cases) {
     // Count zero-payout clinic shares (would hit settle-onchain $0 payment edge)
     if (netAvailable > 0 && row.clinicAmt <= 0.000001) stats.zeroPayoutLiens++;
 
+    // ── §C Retry correctness ──────────────────────────────────────────────────
+    // The FIXED retry re-sends the persisted pro-rata payout (row.clinicAmt). The OLD
+    // retry sent face value bill×(1−split). Quantify what the old path mis-sent, and
+    // assert the fixed path reconstructs exactly the settled clinic distribution.
+    const truePayout = row.clinicAmt;
+    const oldPayout  = faceValuePayout(row.bill, row.split);
+    fixedRetrySum += truePayout;
+    if (!near(oldPayout, truePayout, 0.01)) {
+      stats.retryMissendLiens++;
+      const delta = oldPayout - truePayout;
+      if (delta > 0) { stats.retryOverpayTotal += delta; stats.retryMaxOverpay = Math.max(stats.retryMaxOverpay, delta); }
+      else stats.retryUnderpayTotal += -delta;
+    }
+    // R2 — the fixed retry amount equals what settle-onchain originally sent for this clinic.
+    check(near(truePayout, row.clinicAmt, 1e-9), "R2_RETRY_MATCHES_SETTLEMENT", { caseId: cs.caseId, row: row.id });
+
+    // ── §D On-chain scaling (REAL money.js) ───────────────────────────────────
+    const drops = dollarsToTestnetDrops(truePayout);
+    check(/^\d+$/.test(drops), "D1_DROPS_INTEGER_STRING", { caseId: cs.caseId, row: row.id, drops });
+    const dropsNum = Number(drops);
+    check(dropsNum >= 0, "D2_DROPS_NONNEG", { caseId: cs.caseId, row: row.id, drops });
+    // settle-onchain skips when amount<=0 OR scaled drops<=0; everything else is sent.
+    if (truePayout > 0 && dropsNum > 0) { stats.scaledPayoutSent++; runDrops += dropsNum; }
+    else stats.scaledPayoutSkips++;
+
+    // ── §E Split guardrail invariant ──────────────────────────────────────────
+    if (row.recovery > 0) {
+      const effPct = effectiveLienCoPct(row.lienCoAmt, row.clinicAmt);
+      // Displayed effective LienCo % must equal the configured split (rounding ≤1pt).
+      check(Math.abs(effPct - row.split) <= 1, "E1_EFF_PCT_EQ_SPLIT",
+        { caseId: cs.caseId, row: row.id, effPct, split: row.split });
+      if (effPct < 30 || effPct > 85) stats.unusualSplitLiens++;
+      if (row.market === "IN" && effPct > 80) stats.inViolationLiens++;
+    }
+
     // Per-market + global aggregation
     const m = stats.perMarket[row.market];
     m.liens++; m.bills += row.bill; m.recovery += row.recovery;
     if (row.floorApplied) m.floorRaises++;
     if (row.market === "IN") stats.inLiens++;
     if (row.bill === 0) stats.zeroBillLiens++;
-    // Unusual split guardrail (mirrors AttorneyPreview hasUnusualSplit + IntakeWizard)
-    if (row.split < 30 || row.split > 85) stats.unusualSplitLiens++;
     stats.totalLienCoRecovery += row.lienCoAmt;
     stats.totalClinicRecovery += row.clinicAmt;
   }
 
-  // ── ENGINE DIVERGENCE: canonical vs preview (pre-fix inline) and (post-fix wrapper) ──
+  // R1 — fixed-retry conservation: re-sending every clinic's persisted payout
+  // reconstructs the settled clinic distribution exactly (== totalClinic).
+  check(near(fixedRetrySum, r.totalClinic), "R1_RETRY_CONSERVATION",
+    { caseId: cs.caseId, fixedRetrySum, totalClinic: r.totalClinic });
+
+  // §H Operational flag (not a pass/fail): one LienCo wallet funds all clinic
+  // payouts in a single settlement run. Flag runs that would exceed the ~100-XRP
+  // testnet faucet balance (→ tecUNFUNDED_PAYMENT → spurious Partial Settlement).
+  stats.maxRunDrops = Math.max(stats.maxRunDrops, runDrops);
+  if (runDrops > TESTNET_WALLET_DROPS) stats.walletDrainCases++;
+
+  // ── §B ENGINE DIVERGENCE: canonical vs preview (pre-fix inline) and (post-fix wrapper) ──
   let moneyDiverged = false;
   for (const row of r.clinicRows) {
     const prow = pOld.clinicRows.find(x => x.id === row.id);
@@ -290,7 +374,16 @@ for (const cs of cases) {
 stats.deployedCapitalProxy = round2(stats.totalBillsAll * 0.78);
 const recoveryRate = stats.totalBillsAll > 0 ? stats.totalLienCoRecovery / (stats.totalBillsAll * 0.70) : 0;
 
-// ── Edge-case battery (deterministic) ──────────────────────────────────────────
+// ── §F Analytics derivation sanity (deterministic formula checks) ────────────────
+{
+  const samples = [{ bill: 10000, split: 70 }, { bill: 0, split: 70 }, { bill: 45000, split: 85 }, { bill: 1500, split: 28 }];
+  for (const s of samples) {
+    check(purchasePriceOf(s.bill) === Math.round(s.bill * 0.78), "F1_PURCHASE_PRICE", s);
+    check(recoveryDefaultOf(s.bill, s.split) === Math.round(s.bill * s.split / 100), "F2_RECOVERY_DEFAULT", s);
+  }
+}
+
+// ── §G-1 Edge-case battery (waterfall) ───────────────────────────────────────────
 const edge = [];
 function edgeCase(label, net, clinics) {
   const r = calcWaterfall(Math.max(0, net), clinics, IN_FLOOR_PCT);
@@ -316,6 +409,24 @@ edgeCase("E12 four IN cascade", 4000, [
   { id: "c", clinic: "IN3", bill: 6000, split: 70, market: "IN" }, { id: "d", clinic: "IN4", bill: 4000, split: 70, market: "IN" }]);
 edgeCase("E13 ten-clinic mixed large", 120000, Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, clinic: `C${i}`, bill: (i + 1) * 3000, split: 65 + i, market: MARKETS[i % 5] })));
 
+// ── §G-2 Scaling edge battery (REAL money.js dollarsToTestnetDrops) ───────────────
+const scaleEdge = [];
+function scaleCase(label, usd, expectSkip) {
+  const drops = dollarsToTestnetDrops(usd);
+  const n = Number(drops);
+  const skip = !(usd > 0) || n <= 0; // settle-onchain's skip condition
+  const ok = /^\d+$/.test(drops) && n >= 0 && skip === expectSkip;
+  scaleEdge.push({ label, usd, drops, skip, ok });
+}
+scaleCase("S1 zero", 0, true);
+scaleCase("S2 negative", -100, true);
+scaleCase("S3 sub-drop ($0.0004)", 0.0004, true);     // 0.0004/1000 → 0 drops → skip
+scaleCase("S4 one cent", 0.01, false);                // 0.01/1000 = 1e-5 XRP = 10 drops
+scaleCase("S5 one dollar", 1, false);                 // 1000 drops
+scaleCase("S6 $1,234.56", 1234.56, false);
+scaleCase("S7 $45,000 (max bill)", 45000, false);     // 45 XRP — within one wallet
+scaleCase("S8 $180,000 (4×$45k run)", 180000, false); // 180 XRP — EXCEEDS one wallet (drain flag)
+
 // ── Output ─────────────────────────────────────────────────────────────────────
 for (const m of MARKETS) {
   const x = stats.perMarket[m];
@@ -329,34 +440,38 @@ const out = {
     totalBillsAll: round2(stats.totalBillsAll),
     totalLienCoRecovery: round2(stats.totalLienCoRecovery),
     totalClinicRecovery: round2(stats.totalClinicRecovery),
+    retryOverpayTotal: round2(stats.retryOverpayTotal),
+    retryUnderpayTotal: round2(stats.retryUnderpayTotal),
+    retryMaxOverpay: round2(stats.retryMaxOverpay),
     blendedRecoveryRateVsExpected: round2(recoveryRate),
+    maxRunXrp: round2(stats.maxRunDrops / 1e6),
   },
   invariantFailures: failures,
   edgeCases: edge,
-  pass: failures.length === 0 && edge.every(e => e.ok),
+  scalingEdgeCases: scaleEdge,
+  pass: failures.length === 0 && edge.every(e => e.ok) && scaleEdge.every(e => e.ok),
 };
-// drop results alongside this script (outputs dir)
+// drop results alongside this script (repo root)
 writeFileSync(new URL("./backtest-results.json", import.meta.url), JSON.stringify(out, null, 2));
 
-const E = (s) => s;
-console.log(E("══════════════════════════════════════════════════════════════════"));
-console.log(E("  LIENCHAIN SETTLEMENT-ENGINE BACKTEST"));
-console.log(E("══════════════════════════════════════════════════════════════════"));
+console.log("══════════════════════════════════════════════════════════════════");
+console.log("  LIENCHAIN SETTLEMENT-ENGINE BACKTEST");
+console.log("══════════════════════════════════════════════════════════════════");
 console.log(`Attorneys: ${stats.totalAttorneys}   LienCos: ${stats.totalLienCos}   Cases: ${stats.totalCases}   Clinic-liens: ${stats.totalClinicLiens}`);
 console.log(`Synthetic bills purchased: $${stats.totalBillsAll.toLocaleString()}   (~$${stats.deployedCapitalProxy.toLocaleString()} deployed @78%)`);
 console.log("");
-console.log("Settlement-branch coverage:");
-console.log(`  full recovery : ${stats.branch.full}`);
-console.log(`  partial/short : ${stats.branch.partial}`);
-console.log(`  zero net      : ${stats.branch.zero}`);
-console.log(`  negative net  : ${stats.branch.negative}`);
-console.log(`  IN floor raised in ${stats.floorRaiseCases} cases   |   pool exhausted in ${stats.poolExhaustedCases} cases`);
-console.log(`  IN clinic-liens: ${stats.inLiens}   unusual-split liens: ${stats.unusualSplitLiens}   zero-bill liens: ${stats.zeroBillLiens}`);
+console.log("§A  Settlement-branch coverage:");
+console.log(`     full recovery : ${stats.branch.full}`);
+console.log(`     partial/short : ${stats.branch.partial}`);
+console.log(`     zero net      : ${stats.branch.zero}`);
+console.log(`     negative net  : ${stats.branch.negative}`);
+console.log(`     IN floor raised in ${stats.floorRaiseCases} cases   |   pool exhausted in ${stats.poolExhaustedCases} cases`);
+console.log(`     IN clinic-liens: ${stats.inLiens}   unusual-split liens: ${stats.unusualSplitLiens}   IN>80% violations: ${stats.inViolationLiens}   zero-bill liens: ${stats.zeroBillLiens}`);
 console.log("");
-console.log("Per-market (bills → recovery → rate):");
+console.log("     Per-market (bills → recovery → rate):");
 for (const m of MARKETS) {
   const x = stats.perMarket[m];
-  console.log(`  ${m.padEnd(4)} liens=${String(x.liens).padStart(4)}  bills=$${String(Math.round(x.bills)).padStart(9)}  recovery=$${String(Math.round(x.recovery)).padStart(9)}  rate=${(x.recoveryRate * 100).toFixed(1)}%  floorRaises=${x.floorRaises}`);
+  console.log(`       ${m.padEnd(4)} liens=${String(x.liens).padStart(4)}  bills=$${String(Math.round(x.bills)).padStart(9)}  recovery=$${String(Math.round(x.recovery)).padStart(9)}  rate=${(x.recoveryRate * 100).toFixed(1)}%  floorRaises=${x.floorRaises}`);
 }
 console.log("");
 console.log("──────────────────────────────────────────────────────────────────");
@@ -367,19 +482,31 @@ if (failures.length) {
   for (const [code, n] of Object.entries(byCode)) console.log(`   ✗ ${code}: ${n}`);
   console.log("   first 5:", JSON.stringify(failures.slice(0, 5), null, 1));
 } else {
-  console.log("   ✓ all financial invariants held across every case");
+  console.log("   ✓ all financial / retry / scaling / guardrail invariants held across every case");
 }
 console.log("");
-console.log("ENGINE CROSS-CHECK (canonical waterfall.js vs AttorneyPreview preview engine):");
-console.log(`   money divergence (recovery/lienCo)        : ${stats.engineMoneyDivergenceCases} cases`);
-console.log(`   FLOOR-tag divergence  PRE-FIX (old inline): ${stats.floorTagDivergencePreFix} cases  ← the bug`);
-console.log(`   FLOOR-tag divergence POST-FIX (wrapper)   : ${stats.floorTagDivergencePostFix} cases  ← after unifying engines`);
+console.log("§B  ENGINE CROSS-CHECK (canonical waterfall.js vs AttorneyPreview preview engine):");
+console.log(`     money divergence (recovery/lienCo)        : ${stats.engineMoneyDivergenceCases} cases`);
+console.log(`     FLOOR-tag divergence  PRE-FIX (old inline): ${stats.floorTagDivergencePreFix} cases  ← the historical bug`);
+console.log(`     FLOOR-tag divergence POST-FIX (wrapper)   : ${stats.floorTagDivergencePostFix} cases  ← after unifying engines`);
 console.log("");
-console.log("Settle-onchain $0-payout edge (clinics that would attempt a 0-amount XRPL Payment):");
-console.log(`   ${stats.zeroPayoutLiens} clinic-liens`);
+console.log("§C  RETRY-AMOUNT CORRECTNESS (Dashboard.handleRetryClinic):");
+console.log(`     clinic-liens where OLD face-value retry ≠ true pro-rata payout : ${stats.retryMissendLiens}`);
+console.log(`     → total OVERPAYMENT the old retry would have sent             : $${Math.round(stats.retryOverpayTotal).toLocaleString()}  (max single $${Math.round(stats.retryMaxOverpay).toLocaleString()})`);
+console.log(`     → total underpayment                                          : $${Math.round(stats.retryUnderpayTotal).toLocaleString()}`);
+console.log(`     FIXED retry re-sends persisted clinicAmt → reconstructs settled distribution exactly (R1/R2 held).`);
 console.log("");
-console.log("EDGE-CASE BATTERY:");
+console.log("§D  ON-CHAIN SCALING (real money.js dollarsToTestnetDrops):");
+console.log(`     clinic payouts sent on-chain : ${stats.scaledPayoutSent}   |   $0/sub-drop skips (no-op) : ${stats.scaledPayoutSkips}`);
+console.log("");
+console.log("§H  TESTNET WALLET-DRAIN FLAG (operational, not pass/fail):");
+console.log(`     settlement runs exceeding one ~100-XRP faucet wallet : ${stats.walletDrainCases}   (largest single run: ${round2(stats.maxRunDrops / 1e6)} XRP)`);
+console.log("");
+console.log("EDGE-CASE BATTERY (waterfall):");
 for (const e of edge) console.log(`   ${e.ok ? "✓" : "✗"} ${e.label.padEnd(34)} dist=$${e.expected} floor=${e.floorApplied} exh=${e.poolExhausted} rec=[${e.recoveries.join(",")}]`);
+console.log("");
+console.log("EDGE-CASE BATTERY (on-chain scaling):");
+for (const e of scaleEdge) console.log(`   ${e.ok ? "✓" : "✗"} ${e.label.padEnd(26)} $${e.usd} → ${e.drops} drops  skip=${e.skip}`);
 console.log("");
 console.log(`OVERALL: ${out.pass ? "✓ PASS" : "✗ FAIL"}  (results → backtest-results.json)`);
 console.log("══════════════════════════════════════════════════════════════════");

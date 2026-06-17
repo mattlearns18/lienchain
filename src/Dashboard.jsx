@@ -839,7 +839,7 @@ export default function Dashboard() {
   // recoveries:        number[]  — per-clinic LienCo recovery amount from calcWaterfall
   // results:           object[]  — full result objects {success, txHash?, error?} per clinic
   // patientNetRecovery: number   — patient's net share from waterfall (0 if pool was exhausted)
-  const handleSettled = (caseId, lienIds, hashes = [], recoveries = [], results = [], patientNetRecovery = 0) => {
+  const handleSettled = (caseId, lienIds, hashes = [], recoveries = [], results = [], patientNetRecovery = 0, payouts = []) => {
     const settledAt = new Date().toISOString();
 
     // Compute updated lien records synchronously from current liens state
@@ -848,11 +848,19 @@ export default function Dashboard() {
       if (idx === -1) return l;
       const result = results[idx];
       if (result && !result.success) {
-        // Failed clinic: write settlementError, keep status and tx2 unchanged
-        return { ...l, settlementError: { message: result.error, attemptedAt: settledAt } };
+        // Failed clinic: write settlementError, keep status and tx2 unchanged.
+        // Persist the intended pro-rata payout + recovery so a Retry re-sends the
+        // exact settled amount rather than re-approximating from bill × split.
+        return {
+          ...l,
+          settlementError: { message: result.error, attemptedAt: settledAt },
+          pendingPayout:   payouts[idx]    ?? null,
+          pendingRecovery: recoveries[idx] ?? null,
+        };
       }
-      // Success: clear any previous settlementError, write tx2/recovery/settledAt
-      const { settlementError: _err, ...rest } = l;
+      // Success: clear any previous settlementError + pending retry amounts,
+      // write tx2/recovery/settledAt.
+      const { settlementError: _err, pendingPayout: _pp, pendingRecovery: _pr, ...rest } = l;
       return {
         ...rest,
         status:    "Settled",
@@ -907,17 +915,16 @@ export default function Dashboard() {
     const lien = liens.find(l => l.id === lienId);
     if (!lien) return;
 
-    // Use clinic's share at the lien's split ratio as the amount.
-    // TODO(phase10): retry should re-read from waterfall result, not approximate from bill × split.
-    // On mainnet with pro-rata adjustments (e.g. IN floor, pool exhaustion), bill × split
-    // may overstate or understate the clinic's actual recovery. Retry should go through the
-    // Attorney View settlement flow where the full waterfall is computed.
-    const clinicSharePct = 1 - (lien.split ?? 70) / 100;
-    const amount = lien.bill * clinicSharePct;
+    // Re-send the exact pro-rata / IN-floor-adjusted amount computed at settlement
+    // time (persisted as pendingPayout/pendingRecovery on the failed clinic). This is
+    // correct on a shortfall, where bill × (1 − split%) would overpay the clinic.
+    // Legacy fallback (no pending fields stored): approximate from bill × split.
+    const amount      = lien.pendingPayout   ?? lien.bill * (1 - (lien.split ?? 70) / 100);
+    const lienCoShare = lien.pendingRecovery ?? Math.round(lien.bill * (lien.split ?? 70) / 100);
 
+    // Pass [amount] as payouts so a repeated failure re-persists the correct retry amount.
     const result = await executeSettlementPayment({ caseId, lienId, clinic, amount });
-    const lienCoShare = Math.round(lien.bill * (lien.split ?? 70) / 100);
-    handleSettled(caseId, [lienId], [result.success ? result.txHash : null], [lienCoShare], [result]);
+    handleSettled(caseId, [lienId], [result.success ? result.txHash : null], [lienCoShare], [result], 0, [amount]);
   };
 
   const marketLabel = market === "All" ? "" : ` · ${market}`;

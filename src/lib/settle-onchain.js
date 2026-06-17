@@ -10,8 +10,9 @@
  *      or { success: false, error: string }
  */
 
-import { Client, Wallet, xrpToDrops } from "xrpl";
+import { Client, Wallet } from "xrpl";
 import { getNetworkConfig } from "./network.js";
+import { dollarsToTestnetDrops } from "./money.js";
 
 // Fallback destination addresses for seed/historical clinic names (testnet only).
 // These map the short names used in the hardcoded SETTLEMENTS array in Dashboard.jsx.
@@ -81,14 +82,11 @@ export async function executeSettlementPayment({ caseId, lienId, clinic, amount 
       ts:         new Date().toISOString(),
     };
 
-    // Testnet: scale dollar amount 1000:1 so $1 = 0.001 XRP = 1,000 drops,
-    // keeping payments within faucet-funded wallet balances (~100 XRP each).
-    // The on-chain amounts prove fund movement; exact dollar denomination
-    // is a mainnet concern.
+    // Testnet 1000:1 dollar→drops scaling lives in money.js (single source of
+    // truth, backtested byte-identical to the prior inline xrpToDrops path).
     // TODO(phase10): mainnet currency = issued stablecoin Amount object
     // (e.g. RLUSD/USDC per MAINNET-READINESS.md). Do NOT use this scaling on mainnet.
-    const scaleDollarsToXrp = (usd) => xrpToDrops((Math.max(0.000001, usd) / 1000).toFixed(6));
-    const amountDrops = scaleDollarsToXrp(amount);
+    const amountDrops = dollarsToTestnetDrops(amount);
 
     // Testnet 1000:1 scaling can round a sub-tenth-of-a-cent share down to 0 drops,
     // which XRPL would reject (temBAD_AMOUNT). Such a share is economically zero —

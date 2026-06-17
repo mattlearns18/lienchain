@@ -322,8 +322,16 @@ function SettleModal({ onClose, lien, caseClinics, waterfall, onSettled, patient
       // fall back to bill × split% as a reasonable approximation when waterfall is null.
       return row?.lienCoAmt ?? Math.round(c.bill * (c.split ?? 70) / 100);
     });
+    // Per-clinic dollar payout actually sent on-chain (pro-rata / IN-floor adjusted),
+    // parallel to recoveries. Persisted on any failed clinic so a Retry re-sends this
+    // exact amount instead of re-approximating bill × (1 − split%), which overpays on
+    // a shortfall settlement.
+    const payouts = caseClinics.map(c => {
+      const row = waterfall?.clinicRows?.find(r => r.id === c.id);
+      return row?.clinicAmt ?? c.bill * (1 - (c.split ?? 70) / 100);
+    });
 
-    onSettled?.(caseId, caseClinics.map(c => c.id), allHashes, recoveries, allResults, waterfall?.patientNet ?? 0);
+    onSettled?.(caseId, caseClinics.map(c => c.id), allHashes, recoveries, allResults, waterfall?.patientNet ?? 0, payouts);
   }
 
   const EXPLORER = getNetworkConfig().explorer;
