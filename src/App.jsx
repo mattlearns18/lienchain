@@ -194,7 +194,7 @@ export default function App() {
           {[
             { icon: "🪙", title: "Lien Tokenization", body: "NFTokenMint on XRPL with full metadata — bill, split, clinic, market, attorney. Every lien has a permanent on-chain record.", done: true },
             { icon: "🏥", title: "Multi-Clinic Case Support", body: "A single PI case can have N clinic liens under one case ID. Waterfall distributes the net pool across all clinics in a single settlement run.", done: true },
-            { icon: "⚖️", title: "Per-State Compliance", body: "Indiana 20% clinic floor enforced in the waterfall. Texas hospital lien priority advisory. Configurable per-state policy layer.", done: true },
+            { icon: "⚖️", title: "Per-State Compliance", body: "Texas hospital lien priority advisory. Configurable per-state policy layer enforced in the settlement waterfall.", done: true },
             { icon: "📊", title: "Portfolio Analytics", body: "6-tile KPI dashboard: deployed capital, at-risk exposure, recovery rate, avg days to settle, active/settled case counts. Exposure-by-market chart and aging buckets.", done: true },
             { icon: "👤", title: "Attorney Provisioning", body: "Add attorneys to a registry, generate tokenized invite URLs per case, track Invited → Accepted status. Token-gated attorney portal with full waterfall access.", done: true },
             { icon: "⛓️", title: "On-Chain Settlement", body: "Real XRPL Payment transactions per clinic. tesSUCCESS enforcement. Partial-failure recovery with per-clinic Retry. Fiat receipt gate before payouts fire.", done: true },
@@ -239,7 +239,7 @@ export default function App() {
           {[
             { label: "HIPAA", detail: "Patient data stays off-chain. Only anonymized lien metadata is anchored on-chain; no PHI in transaction memos." },
             { label: "UCC Article 9", detail: "Lien metadata and perfection records structured for UCC-9 assignment compliance." },
-            { label: "MO · TX · NV · IN Statutory Compliance", detail: "Indiana 20% clinic floor enforced in the settlement waterfall. Texas 72-hour filing window advisory. Multi-state policy layer configurable per market." },
+            { label: "MO · TX · NV Statutory Compliance", detail: "Texas 72-hour filing window advisory. Multi-state policy layer configurable per market." },
             { label: "KYC / AML", detail: "Wallet onboarding designed to integrate identity verification prior to mainnet deployment." },
           ].map(({ label, detail }) => (
             <Card key={label}>

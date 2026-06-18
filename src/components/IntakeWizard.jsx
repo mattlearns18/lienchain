@@ -35,18 +35,17 @@ const CLINIC_DESTINATIONS = {
   "Gateway Injury Clinic": "r3CuAh6S7JnjcsN5z8LyoUDZiBvT8aVBBP",
 };
 
-import { MARKETS as MARKETS_LIST, MARKET_INFO } from "../lib/markets.js";
+import { SELECTABLE_MARKETS, MARKET_INFO } from "../lib/markets.js";
 
-// Wizard market options: exclude "All", shaped as {value, label} for <select>
-const MARKET_OPTIONS = MARKETS_LIST
-  .filter(m => m !== 'All')
+// Wizard market options: only markets open for NEW liens (SELECTABLE_MARKETS excludes
+// retired markets like Indiana), shaped as {value, label} for <select>.
+const MARKET_OPTIONS = SELECTABLE_MARKETS
   .map(m => ({
     value: m,
     label: m === 'KC'  ? 'KC — Kansas City' :
            m === 'STL' ? 'STL — St. Louis'  :
            m === 'TX'  ? 'TX — Texas'       :
-           m === 'NV'  ? 'NV — Nevada'      :
-           m === 'IN'  ? 'IN — Indiana'     : m,
+           m === 'NV'  ? 'NV — Nevada'      : m,
   }));
 
 const MONTHS   = ["January","February","March","April","May","June","July","August","September","October","November","December"];

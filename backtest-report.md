@@ -4,6 +4,8 @@
 **Scope:** Re-run the 100-attorney / 50-LienCo backtest, extend it beyond the waterfall math to the real money path, fix anything broken, and flag decisions that need your sign-off.
 **Result:** ✅ **PASS** — every financial, retry, scaling, and guardrail invariant held across all 602 cases / 1,242 clinic-liens. One real money bug was found and fixed (settlement retries). Two maintainability defects were fixed. Operational items for your decision are listed at the end.
 
+> **Update (2026-06-17, later same day):** Indiana was subsequently **retired as a go-forward market** — no new Indiana liens can be created (it's removed from the intake wizard and landing-page copy), though historical Indiana settlements remain viewable in the dashboard. The synthetic backtest **portfolio** now generates only KC/STL/TX/NV (so the per-market table below showing Indiana liens reflects the *earlier* run). The Indiana 20% clinic-floor engine is **retained but dormant** in `waterfall.js`, and its dedicated edge cases (E3–E6, E12) and unit tests (S3–S6) are **kept**, so that engine stays fully tested for an easy future re-add. The backtest still reports `OVERALL: ✓ PASS`, and the retry-bug findings below are unchanged ($4.71M would-be overpayment, 406 partial cases). The decision in §5.1 about an unmet Indiana floor is therefore **moot for now** — re-opens only if Indiana is re-activated.
+
 ---
 
 ## 1. What "backtest" means here

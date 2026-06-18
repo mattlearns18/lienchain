@@ -155,8 +155,12 @@ const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const randInt = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
 const round2 = (x) => Math.round(x * 100) / 100;
 
+// MARKETS — kept full (incl. IN) for per-market reporting + the engine edge battery,
+// which still exercises the RETAINED-but-dormant Indiana 20% floor (E3–E6, E12).
 const MARKETS = ["KC", "STL", "TX", "NV", "IN"];
-const MARKET_WEIGHTS = ["KC", "KC", "KC", "STL", "STL", "STL", "TX", "TX", "NV", "IN"]; // KC/STL home-base heavy
+// MARKET_WEIGHTS — the live SELECTABLE markets only. Indiana is retired as a
+// go-forward market (no new liens), so the synthetic portfolio generates none.
+const MARKET_WEIGHTS = ["KC", "KC", "KC", "STL", "STL", "STL", "TX", "TX", "NV", "NV"]; // KC/STL home-base heavy
 const IN_FLOOR_PCT = 0.20;
 
 // ── Build 50 LienCos with differing split policies ─────────────────────────────

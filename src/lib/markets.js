@@ -8,11 +8,15 @@
 //   - IntakeWizard.jsx    used: state, statute, warnings
 // All existing consumers read a strict subset of these fields.
 
+// MARKETS — every market the dashboard can DISPLAY/FILTER, including retired ones
+// so historical settlements still render. To control which markets you can create
+// NEW liens in, use SELECTABLE_MARKETS (below), not this list.
 export const MARKETS = ['All', 'KC', 'STL', 'TX', 'NV', 'IN'];
 
 export const MARKET_INFO = {
   KC: {
     state:    'Missouri',
+    active:   true,
     statute:  'RSMo §484.130',
     flags:    [],
     warnings: [],
@@ -21,6 +25,7 @@ export const MARKET_INFO = {
   },
   STL: {
     state:    'Missouri',
+    active:   true,
     statute:  'RSMo §484.130',
     flags:    [],
     warnings: [],
@@ -29,6 +34,7 @@ export const MARKET_INFO = {
   },
   TX: {
     state:    'Texas',
+    active:   true,
     statute:  'Tex. Health & Safety Code §55.005',
     flags:    ['tx-72h'],
     warnings: ['⚠ 72-hour rescission window: Texas law allows lien rescission within 72 hours of assignment. Flag all TX liens.'],
@@ -39,6 +45,7 @@ export const MARKET_INFO = {
   },
   NV: {
     state:    'Nevada',
+    active:   true,
     statute:  'NRS §108.590',
     flags:    [],
     warnings: [],
@@ -47,6 +54,9 @@ export const MARKET_INFO = {
   },
   IN: {
     state:    'Indiana',
+    active:   false,  // RETIRED as a go-forward market (no new liens). Existing
+                      // Indiana settlements remain viewable as history; the 20%
+                      // clinic-floor engine in waterfall.js is retained but dormant.
     statute:  'Ind. Code §32-33-4-4',
     flags:    ['in-nonassignable'],
     warnings: ['⛔ Non-assignability risk: Indiana PI liens may be non-assignable. Confirm assignment validity before issuing.'],
@@ -57,3 +67,9 @@ export const MARKET_INFO = {
     },
   },
 };
+
+// SELECTABLE_MARKETS — markets you can create NEW liens in (intake wizard reads this).
+// Derived from the per-market `active` flag, so retiring/re-adding a market is a
+// one-field change in MARKET_INFO above. Indiana (active:false) is excluded here but
+// stays in MARKETS/MARKET_INFO so its historical settlements still render.
+export const SELECTABLE_MARKETS = Object.keys(MARKET_INFO).filter(m => MARKET_INFO[m].active !== false);
