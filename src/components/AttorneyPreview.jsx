@@ -15,6 +15,15 @@ function parseLocalDate(ymd) {
   return new Date(+y, +m - 1, +d);
 }
 
+// Today's date as YYYY-MM-DD in LOCAL time. `toISOString().slice(0,10)` is the UTC
+// day — after ~6-7pm Central it returns tomorrow's date, mis-stamping fiat receipts
+// and patient disbursements recorded in the evening. Same off-by-one parseLocalDate
+// guards against on the read side.
+function localTodayStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+}
+
 // ── Multi-clinic waterfall calculator ────────────────────────────────────────
 //
 // Backtest hardening (2026-06): this used to carry its own copy of the IN-floor
@@ -553,17 +562,21 @@ function ComplianceBadges({ market }) {
 // ── FiatReceiptModal ──────────────────────────────────────────────────────────
 // Operator-only modal to record fiat receipt before settlement execution.
 function FiatReceiptModal({ expectedAmount, initial, onSave, onClose }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localTodayStr();
   const [amount,       setAmount]       = useState(initial?.amount       ?? expectedAmount);
+  const [touched,      setTouched]      = useState(false);
   const [receivedAt,   setReceivedAt]   = useState(initial?.receivedAt   ?? todayStr);
   const [reference,    setReference]    = useState(initial?.reference    ?? "");
   const [confirmedBy,  setConfirmedBy]  = useState(initial?.confirmedBy  ?? "");
   const [err,          setErr]          = useState("");
 
   // Sync prefill if the waterfall finishes computing after this modal mounted.
-  // Only applies to the initial prefill (no prior receipt); user edits are preserved.
+  // Guarded by `touched`: once the operator types anything in the amount field,
+  // their entry is never overwritten by a later waterfall recompute. Without the
+  // guard, any parent re-render that shifted expectedAmount silently clobbered
+  // a hand-entered wire amount.
   useEffect(() => {
-    if (!initial?.amount && expectedAmount > 0) {
+    if (!touched && !initial?.amount && expectedAmount > 0) {
       setAmount(expectedAmount);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -593,7 +606,7 @@ function FiatReceiptModal({ expectedAmount, initial, onSave, onClose }) {
               className="db-form-input"
               type="number" min="0" step="0.01"
               value={amount}
-              onChange={e => setAmount(e.target.value)}
+              onChange={e => { setTouched(true); setAmount(e.target.value); }}
               placeholder={String(expectedAmount)}
             />
             {mismatch && (
@@ -643,12 +656,23 @@ function FiatReceiptModal({ expectedAmount, initial, onSave, onClose }) {
 // Operator-only modal to record the attorney's patient disbursement from trust account.
 // Mirrors FiatReceiptModal — same form structure, separate audit record.
 function PatientDisbursalModal({ expectedAmount, initial, onSave, onClose }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localTodayStr();
   const [amount,      setAmount]      = useState(initial?.amount      ?? expectedAmount);
+  const [touched,     setTouched]     = useState(false);
   const [disbursedAt, setDisbursedAt] = useState(initial?.disbursedAt ?? todayStr);
   const [reference,   setReference]   = useState(initial?.reference   ?? "");
   const [confirmedBy, setConfirmedBy] = useState(initial?.confirmedBy ?? "");
   const [err,         setErr]         = useState("");
+
+  // Same prefill-sync as FiatReceiptModal (this modal was added in Phase 12
+  // without it, so mounting before the waterfall computed left the amount at 0).
+  // `touched` guard: never overwrite a hand-entered amount.
+  useEffect(() => {
+    if (!touched && !initial?.amount && expectedAmount > 0) {
+      setAmount(expectedAmount);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expectedAmount]);
 
   const amountNum = parseFloat(amount) || 0;
   const mismatch  = Math.abs(amountNum - expectedAmount) > 1;
@@ -674,7 +698,7 @@ function PatientDisbursalModal({ expectedAmount, initial, onSave, onClose }) {
               className="db-form-input"
               type="number" min="0" step="0.01"
               value={amount}
-              onChange={e => setAmount(e.target.value)}
+              onChange={e => { setTouched(true); setAmount(e.target.value); }}
               placeholder={String(expectedAmount)}
             />
             {mismatch && (
