@@ -146,6 +146,12 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
       // "new" mode → caseId = lienId (single-clinic case, they match).
       // "add" mode → caseId = selectedCaseId (the pre-existing case).
       caseId:         effectiveCaseId,
+      // Two-sided-model groundwork: which funder purchased this lien. Today
+      // every lien is funded by LienCo; when third-party funders join the
+      // platform this becomes a picker instead of a constant. Keeping it a
+      // field (not an assumption) is what lets the marketplace turn happen
+      // without a data migration.
+      funderId:       "LIENCO",
       market,
       clinic:         clinicName,
       bill:           billNum,

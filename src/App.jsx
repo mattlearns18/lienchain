@@ -96,11 +96,12 @@ export default function App() {
         </h1>
         <p className="hero-sub">
           Replacing 120-day paper cycles with on-chain settlement on the XRP Ledger.
-          Per-state compliance · Multi-clinic case support · Real-time portfolio analytics · Permanent on-chain audit trail.
+          Statute-aware settlement — state lien rules enforced in code · Multi-clinic case support · Real-time portfolio analytics · Permanent on-chain audit trail.
         </p>
         <div className="hero-actions">
           <Link to="/dashboard" className="btn btn-primary">View Live Dashboard →</Link>
           <Link to="/attorney/demo" className="btn btn-outline">Attorney Portal Demo →</Link>
+          <Link to="/proof" className="btn btn-outline">On-Chain Proof →</Link>
           <a href="#features" className="btn btn-outline">See What's Built</a>
         </div>
         <div className="hero-stat-row">

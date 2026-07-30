@@ -29,3 +29,28 @@ export function dollarsToTestnetDrops(usd) {
   const xrp = (Math.max(0.000001, usd) / 1000).toFixed(6); // ≤6 decimals → integer drops
   return String(Math.round(Number(xrp) * 1e6));
 }
+
+// ── Platform servicing fee (record-keeping only) ─────────────────────────────
+//
+// Establishes the platform's unit economics from day one: every settled lien
+// books an internal servicing/platform fee, charged notionally to the funder
+// (LienCo today) on its recovery. This is BOOKKEEPING ONLY — it does not move
+// money, does not change any on-chain Payment amount, and does not alter the
+// clinic/LienCo waterfall split. It exists so the "platform take rate" story
+// has real per-lien records behind it when third-party funders join.
+//
+// 1.5% sits mid-band of the 1–2% servicing range recommended in
+// market-analysis-2026.md §5.2. Change here → applies to all new settlements.
+export const PLATFORM_FEE_PCT = 1.5;
+
+/**
+ * Compute the platform servicing fee on a funder's recovery amount.
+ * Pure; rounds to the cent. Non-positive / missing recovery → 0.
+ *
+ * @param {number} recovery  Funder's (LienCo's) dollar recovery on the lien.
+ * @returns {number}         Fee in dollars, rounded to the cent.
+ */
+export function platformFee(recovery) {
+  if (!(recovery > 0)) return 0;
+  return Math.round(recovery * PLATFORM_FEE_PCT) / 100;
+}

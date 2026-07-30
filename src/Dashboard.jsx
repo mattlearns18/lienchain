@@ -34,6 +34,7 @@ const FLAG_INFO = {
 import { MARKETS, MARKET_INFO } from "./lib/markets.js";
 import { getNetworkConfig, NETWORK_NAME, IS_MAINNET } from "./lib/network.js";
 import { executeSettlementPayment } from "./lib/settle-onchain.js";
+import { platformFee, PLATFORM_FEE_PCT } from "./lib/money.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const usd      = (n) => `$${Number(n).toLocaleString()}`;
@@ -861,12 +862,19 @@ export default function Dashboard() {
       // Success: clear any previous settlementError + pending retry amounts,
       // write tx2/recovery/settledAt.
       const { settlementError: _err, pendingPayout: _pp, pendingRecovery: _pr, ...rest } = l;
+      const recovery = recoveries[idx] ?? null;
       return {
         ...rest,
         status:    "Settled",
         tx2:       hashes[idx] ?? l.tx2 ?? null,
-        recovery:  recoveries[idx] ?? null,
+        recovery,
         settledAt: l.settledAt ?? settledAt,
+        // Platform servicing fee — internal bookkeeping only (no money moves;
+        // on-chain amounts and the clinic/LienCo split are untouched). Charged
+        // notionally to the funder on its recovery; establishes per-lien unit
+        // economics for the platform take-rate model. See money.js.
+        platformFeePct: PLATFORM_FEE_PCT,
+        platformFeeAmt: platformFee(recovery),
       };
     });
     saveLiens(updatedLiens, SEED_IDS);

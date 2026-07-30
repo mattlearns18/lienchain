@@ -8,6 +8,7 @@ import "./index.css";
 import App from "./App.jsx";
 import Dashboard from "./Dashboard.jsx";
 import AttorneyPortal from "./pages/AttorneyPortal.jsx";
+import Proof from "./pages/Proof.jsx";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -16,6 +17,7 @@ createRoot(document.getElementById("root")).render(
         <Route path="/" element={<App />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/attorney/:caseId" element={<AttorneyPortal />} />
+        <Route path="/proof" element={<Proof />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>
