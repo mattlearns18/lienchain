@@ -27,7 +27,14 @@ lienchain/
 ├── package.json
 ├── .env.example / .env.local   VITE_LIENCO_TESTNET_SEED — never commit
 ├── README.md                   Public-facing project doc
+├── MAINNET-READINESS.md        Pre-flight checklist for the mainnet flip
 ├── phase1-proof.md             Live testnet settlement proofs (TX/NV/IN)
+├── phase5-9-plan.md …          Per-phase implementation specs (5,6,7,8,9)
+├── phase13-plan.md             QUEUED: per-state assignability via tfTransferable
+├── market-analysis-2026.md     Market analysis, competitor landscape, valuation frame
+├── attorney-opinion-packet.md  Engagement packet for the §7 opinion letter
+├── backtest.mjs                Settlement-engine backtest harness (100 attys / 50 funders)
+├── backtest-report.md          Latest backtest findings + open decisions
 ├── wallets.json                Generated testnet wallets (gitignored in practice)
 │
 ├── setup-wallets.js            Generates + funds LienCo and Clinic wallets
@@ -37,18 +44,26 @@ lienchain/
 ├── settle-real.js              Multi-market settlement variant (takes market code arg)
 │
 └── src/
-    ├── main.jsx                Router: /, /dashboard, /attorney/:caseId
+    ├── main.jsx                Router: /, /dashboard, /attorney/:caseId, /proof
     ├── App.jsx                 Landing page (hero, problem/solution, features)
-    ├── Dashboard.jsx           Multi-market dashboard, 6-wallet panel, ledger
+    ├── Dashboard.jsx           Multi-market dashboard, 6-wallet panel, ledger, analytics
     ├── lib/
+    │   ├── markets.js          MARKETS / MARKET_INFO / SELECTABLE_MARKETS — market config
+    │   ├── waterfall.js        calcWaterfall — THE settlement math (single source of truth)
+    │   ├── money.js            dollarsToTestnetDrops + PLATFORM_FEE_PCT / platformFee
+    │   ├── network.js          getNetworkConfig — testnet|mainnet flag, seeds, endpoints
+    │   ├── settle-onchain.js   executeSettlementPayment — real XRPL Payment per clinic
+    │   ├── store.js            localStorage layer (liens, cases, reductions, attorneys)
     │   ├── xrpl-tokenize.js    Client-side NFTokenMint issuance via WebSocket
-    │   └── xrpl-data.js        Account/tx queries, memo decode, balance fetch
+    │   ├── xrpl-data.js        Account/tx queries, memo decode, balance fetch
+    │   └── __tests__/          waterfall.test.js — imports the REAL engine (27 assertions)
     ├── components/
     │   ├── IntakeWizard.jsx    4-step lien intake (Clinic → Case → Split → Tokenize)
     │   ├── ReductionModal.jsx  Reduction request modal (reason, context, attorney)
-    │   └── AttorneyPreview.jsx Settlement modal w/ XRPL anim + split slider + flags
+    │   └── AttorneyPreview.jsx Settlement modal + fiat-receipt + patient-disbursal modals
     └── pages/
-        └── AttorneyPortal.jsx  Per-case attorney view with reduction handler
+        ├── AttorneyPortal.jsx  Per-case attorney view with reduction handler
+        └── Proof.jsx           Public /proof page — verifiable settlement records
 ```
 
 ## 4. Key Architectural Decisions
@@ -81,7 +96,7 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 ## 6. Current State
 
-**Phase 3, Phase 4, Phase 5, Phase 6, Phase 7, Phase 8, and Phase 9 are complete.** LienChain engineering is mainnet-ready behind the `VITE_NETWORK` feature flag.
+**Phases 3 through 12 are complete.** LienChain engineering is mainnet-ready behind the `VITE_NETWORK` feature flag.
 
 *Phase 3* — real XRPL tokenization on the live site. Intake wizard mints a real testnet **NFToken** via `NFTokenMint` (this line previously said "MPT" — corrected 2026-09-08), the dashboard reads it back, the attorney preview animates the 4-step settlement and flags compliance issues correctly across all five markets. `phase1-proof.md` documents the testnet settlement proofs (TX 72%, NV 65%, IN 70% LienCo splits) with verifiable XRPL Explorer links.
 
@@ -97,9 +112,21 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 *Phase 9* — Mainnet readiness. Three commits plus a fix-up. (1) `src/lib/network.js` centralizes network config; `VITE_NETWORK=testnet|mainnet` flag with separate seeds (`VITE_LIENCO_TESTNET_SEED`, `VITE_LIENCO_MAINNET_SEED`), overridable WSS endpoints, per-network explorer URLs, loud TESTNET/MAINNET badge in dashboard + attorney portal headers (mainnet styled with red glow). (2) Fiat receipt confirmation gate — operator records attorney's wire/check arrival in LienCo's bank account (amount + date + reference + initials) via Mark Fiat Received modal; Settle Now disabled until receipt confirmed; `case.fiatReceipt` field; operator-only (hidden in attorney views per §4 separation rule). (3) Real on-chain `Payment` transactions per clinic via `src/lib/settle-onchain.js` (`executeSettlementPayment`) — replaces the mock hashes that Phase 5 produced; clinic `destinationAddress` field seeded from `wallets.json`; partial-failure recovery with new `Partial Settlement` case status (amber badge); per-clinic Retry Payout button. Plus `MAINNET-READINESS.md` pre-flight checklist at repo root covering the §7 business gaps + technical readiness items. Fix-up commit `12340fd` added the missing `meta.TransactionResult === 'tesSUCCESS'` enforcement (critical — earlier any `tec*` failure was silently treated as success) and the dollars→XRP unit scaling (1000:1 so testnet payments fit in 100-XRP faucet wallets); also wired `lien.recovery` to the LienCo share and fixed the success-modal counter regression. Final QA verified two real testnet Payment transactions with `tesSUCCESS` and confirmed actual wallet balance movement (LienCo dropped 3.6 XRP, STL +2.1 XRP, KC +1.5 XRP). Spec at `phase9-plan.md`.
 
+*Phase 10* — Demo-polish pass for investor-readiness. One demo-blocking regression plus a batch of cosmetic items, targeted at mid-July investor demos. (1) **Regression fix:** the `/attorney/demo` route was being blocked by the Phase 8 token gate — the first thing an investor hits from a landing-page CTA. It now bypasses the gate so the standalone showcase loads directly. (2) `App.jsx` landing page rewritten — hackathon framing removed ("Testnet MVP", "XRPL Hackathon 2025"), stale architecture references corrected (MPT/RLUSD/Hooks → NFToken/Payments), Solution + Features sections rewritten to reflect what Phases 3–9 actually shipped. (3) Footer + tab subtitles now read from `getNetworkConfig().name` instead of hardcoded "testnet". (4) Misc: `v3` dev tag removed from the dashboard header; Recovery Rate Y-axis ticks round to whole percent; stray `<span>0%</span>` render artifact removed; "Multi" market label on multi-clinic Liens rows got a title tooltip listing the actual markets (Phase 8 polish item). **Both Phase 9 cosmetic deferrals were closed here** — the success modal now reads the actual successful TX count, and the fiat receipt prefill computes `netAvailable` on initial open.
+
+*Phase 11* — Pre-investor final polish. Three fixes. (1) The single-clinic settle success modal now displays the real on-chain `Payment` hash with an explorer link, matching the multi-clinic flow. This was the root of Matt's "invalid TX hash" report — the hash was always fine and `tesSUCCESS`, the modal just never surfaced it. (2) `README.md` wholesale rewrite — strips Phase-1-era hackathon framing (Multi-Purpose Tokens, RLUSD-as-shipped, XRPL Hooks, "React dashboard: Planned") and replaces it with Phase 3–10 accurate architecture, so investors clicking through from the landing page see a serious platform README. (3) Liens tab subtitle made dynamic from network config (last Phase 10 straggler). Plus a related fix (`a1a2da7`): `SettleModal` now freezes a `runSnapshot` of `clinicsToSettle` at the top of `run()` before any awaits — once `onSettled()` wrote `tx2` and the parent re-rendered, the list filtered to `[]` and the done-screen showed "0 TXs on XRPL".
+
+*Phase 12* — Patient disbursement tracking (operator record-keeping, off-chain). Mirrors the Phase 9 fiat receipt pattern for the patient's net recovery share. **No on-chain payment to the patient** — the attorney disburses from their trust account by check/wire as they do today; LienChain records the confirmation for the audit trail. New `case.patientDisbursement` field (`{amount, disbursedAt, reference, confirmedBy}`); Mark Patient Disbursed button + modal in the operator's Settle Now flow when `waterfall.patientNetRecovery > 0`, amount prefilled to patient net with a non-blocking mismatch warning above $1 deviation; amber "pending" → green "disbursed" strip; `[Patient ⌛]` / `[Patient ✓]` pill on Liens parent rows for settled cases with patient net > 0. Settle Now is deliberately **not** gated on patient disbursement — clinics get paid on-chain first, the attorney's patient disbursement runs on its own timeline. Operator-only (gated on `isOperatorView`, per the §4 separation rule). **This completes the audit trail end-to-end:** attorney fee + case costs (attorney-side), LienCo share (fiat receipt, Phase 9), clinic shares (on-chain Payments, Phase 9), patient share (Phase 12).
+
 *Backtest hardening (2026-06-17)* — Extended the 100-attorney / 50-LienCo backtest (`backtest.mjs`) beyond the waterfall math to the real money path, and fixed three issues. (1) **Retry money bug (fixed):** `handleRetryClinic` re-sent `bill × (1 − split/100)` (face value), overpaying the clinic on any shortfall settlement — the backtest measured 860/1,242 liens affected, ~$4.7M total overpayment in the synthetic portfolio. Fix persists the waterfall's per-clinic `clinicAmt`/`lienCoAmt` on a failed clinic as `pendingPayout`/`pendingRecovery`; the retry re-sends the stored amount (legacy fallback preserved). This resolves the Phase-9 `TODO(phase10)` retry gap. (2) **Money conversion extracted** to `src/lib/money.js` (`dollarsToTestnetDrops`, pure, verified byte-identical to the old inline `xrpToDrops` path across 20k values); `settle-onchain.js` and the backtest both import it. (3) **`waterfall.test.js` now imports the real `waterfall.js`** instead of an inlined copy (27/27 pass). New backtest invariants: retry conservation (R1/R2), on-chain scaling (D1/D2), split-guardrail (effective LienCo % == split, E1), plus an operational testnet-wallet-drain flag. `OVERALL: ✓ PASS`. Report at `backtest-report.md`.
 
 *Indiana retired as a go-forward market (2026-06-17)* — Per Matt's decision, Indiana is removed as an active market: not selectable in the intake wizard (`SELECTABLE_MARKETS` in `src/lib/markets.js` excludes it via `active:false`), and dropped from the landing-page marketing copy (`App.jsx`). Existing/historical Indiana settlements remain viewable and filterable in the dashboard (`MARKET_INFO.IN` / `MARKETS` keep IN), and the 20% clinic-floor engine in `waterfall.js` is retained but dormant. The backtest portfolio now generates only KC/STL/TX/NV (`MARKET_WEIGHTS`), while the IN floor edge battery (E3–E6, E12) and unit tests (S3–S6) are kept so the dormant engine stays covered. Re-activating Indiana = set `active:true` on `MARKET_INFO.IN`. Backtest still `OVERALL: ✓ PASS` (0 IN liens generated, all IN edge/engine tests green).
+
+*Record-keeping modal fixes (`70c4bd2`)* — Three related bugs in the Phase-9/12 modals in `AttorneyPreview.jsx`. (1) `FiatReceiptModal`'s prefill-sync effect overwrote a hand-typed wire amount whenever the parent waterfall recomputed — a `touched` flag now protects operator edits. (2) `PatientDisbursalModal` never got the same prefill-sync fix, so mounting before the waterfall computed left its amount stuck at 0. (3) Both modals stamped "today" from `toISOString()` (UTC), so anything recorded after ~6–7pm Central was dated **tomorrow** — new `localTodayStr()` helper fixes it. Verified: esbuild clean, 27/27 tests, backtest PASS.
+
+*Market analysis + platform-model groundwork (2026-07)* — Two commits. (1) `market-analysis-2026.md` — national market analysis, competitor landscape, and valuation frame. (2) Implements the four code-side recommendations from its §5: **(a) two-sided-model groundwork** — every new lien records a `funderId` (`'LIENCO'` today) so third-party funders become a picker rather than a data migration; **(b) platform servicing fee as internal bookkeeping** — `PLATFORM_FEE_PCT` (1.5%) + pure `platformFee()` in `money.js`, recorded per lien at settlement as `platformFeePct`/`platformFeeAmt`. **No money moves** — on-chain amounts and the clinic/LienCo split are untouched; this exists to establish per-lien take-rate unit economics before third-party funders join. **(c)** landing hero repositioned to lead with "Statute-aware settlement — state lien rules enforced in code"; **(d)** new public `/proof` page (`src/pages/Proof.jsx`) showing verifiable testnet settlement records with XRPL Explorer links, structured to carry mainnet records post-flip, exposing no operator or attorney data.
+
+*Attorney opinion-letter engagement packet (2026-07-30)* — `attorney-opinion-packet.md`: the engagement packet for the §7 opinion letter, covering MO/TX/NV enforceability, a securities memo, HIPAA, and the deliverables list.
 
 **Phase 13 is scoped and queued** — per-state assignability enforcement via the `tfTransferable` mint flag, spec at `phase13-plan.md`. Not yet implemented; it is a functional no-op for today's four active markets, so it can land at any time. Mainnet flip itself (`VITE_NETWORK=mainnet` in Vercel env) is gated by §7 business gaps (LLC, bank, E&O, opinion letter) and Matt's go-decision per the `MAINNET-READINESS.md` checklist. Two known cosmetic items deferred to a Phase 10 polish pass: (a) success-modal final state reads "0 TXs on XRPL" instead of the actual successful count even though the in-flight animation displays it correctly; (b) fiat receipt modal prefill shows gross instead of `netAvailable` on initial load before any gross-input interaction (works correctly once gross is touched).
 
