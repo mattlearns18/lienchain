@@ -131,9 +131,17 @@ Only after clinic wallet onboarding exists should `CredentialIDs` be attached to
 - **Building the secondary market itself.**
 - **Retrofitting existing liens** — impossible; flags are immutable.
 
-## Forward note (not this phase)
+## `TransferFee` — decided, do not set it
 
-`NFTokenMint` supports a `TransferFee` field (0–50.00%, in increments of 0.001) that pays **the issuer** on secondary sales, and it requires `tfTransferable`. That is a plausible future path to enforcing the 1.5% `PLATFORM_FEE_PCT` servicing fee on-chain rather than as the bookkeeping-only record it is today in `money.js`. Like `Flags`, `TransferFee` is **immutable at mint** — so if on-chain fee capture is ever wanted, it must be decided before minting at volume. Worth a decision *before* mainnet, even though implementation is later.
+Mint with **no `TransferFee`** (leave it unset). This was evaluated and rejected on 2026-09-08.
+
+`TransferFee` is an issuer royalty on **secondary sales of the token**. The 1.5% `PLATFORM_FEE_PCT` in `money.js` is a servicing fee on the funder's **recovery at settlement**. Different events — and since liens are held to settlement and settlement moves money via `Payment` (not an NFT sale), a `TransferFee` would capture ≈$0 under the current model. It cannot enforce the servicing fee.
+
+It is also **immutable at mint**, requires `tfTransferable` (so it is impossible on non-assignable liens), and per the Trading NFTs doc a fee-bearing NFT *"can only be traded for tokens for which you have a trust line"* — an ongoing trust-line obligation or trades fail.
+
+If LienChain ever monetizes a secondary market, use **brokered mode** instead: a broker account matches buy and sell offers in one transaction and collects a broker fee at an agreed rate from the buyer's funds — set per trade, changeable anytime, nothing baked into the token.
+
+**Implementation note for this phase:** do not add a `TransferFee` field to the `NFTokenMint` transaction. No code change required — just don't introduce one.
 
 ---
 
