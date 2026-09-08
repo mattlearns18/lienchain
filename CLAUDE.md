@@ -107,9 +107,23 @@ Matt is non-technical. When explaining a change, walk through what it does and w
 
 These are non-code blockers Matt is working through in parallel — they don't affect the build directly but they gate going to mainnet and accepting real money:
 
-- **LLC formation** — entity not yet stood up.
-- **Business bank account** — pending LLC.
-- **E&O insurance** — errors & omissions coverage for the platform.
-- **Healthcare lien attorney opinion letter** — formal legal opinion that the LienChain assignment structure is enforceable in each target state, especially Indiana given the non-assignability concern.
+- ✅ **LLC formation — CLOSED (2026-09-08).** Entity is stood up.
+- ✅ **Business bank account — CLOSED (2026-09-08).** Open and operating.
+- **E&O insurance** — errors & omissions coverage for the platform. Still open.
+- **Healthcare lien attorney opinion letter** — in progress; Matt is driving. Formal legal opinion that the LienChain assignment structure is enforceable in each target state. Engagement packet drafted at `attorney-opinion-packet.md` (MO/TX/NV enforceability, securities memo, HIPAA). Indiana's non-assignability question is no longer urgent now that IN is retired as a go-forward market, but it returns if IN is ever re-activated.
 
 When any of these close, update this section.
+
+**Vendor diligence — Crossmint: REJECTED (2026-09-08).** Evaluated for attorney KYC, clinic wallet provisioning, and stablecoin on/offramp. **Crossmint does not support XRPL** — its published supported-chains table (40+ chains: EVM, Solana, Stellar, Aptos, Sui, Flow, Hedera) has no XRP Ledger entry, not even a "contact sales" option. Adopting it would mean leaving XRPL mainnet or bridging. Replaced by an XRPL-native path — see below.
+
+**Recommended path for the same three gaps (XRPL-native):**
+- **Stablecoin →** RLUSD, Ripple's NYDFS-regulated USD stablecoin, issued **natively on XRPL** (not wrapped). ~$2.40B circulating (Sept 2026); XRPL holds ~46% of supply and passed Ethereum in June 2026; RLUSD is >90% of all XRPL stablecoin supply. This is the concrete answer to the `TODO(phase10)` mainnet currency item in `settle-onchain.js` / `money.js` — replaces the 1000:1 scaled testnet XRP with a real stablecoin Amount object.
+- **Identity/KYC →** off-chain verification vendor (Persona / Sumsub / Veriff / Alloy class) to actually verify documents and run AML/sanctions, then attest the result on-ledger via **XRPL Credentials (XLS-70)** — identity documents stay off-ledger. Upgrades attorney provisioning from the Phase-8 email + `randomUUID()` access token to real identity verification.
+- **Access gating →** **Permissioned Domains (XLS-80)** to define which credentials are required to hold or receive a lien. Directly supports the secondary-market vision and assignability restrictions.
+- ✅ **Amendment status VERIFIED LIVE on XRPL mainnet (checked 2026-09-08):**
+  - **Credentials (XLS-70)** — activated **2025-09-04, 03:51:21 UTC** via `EnableAmendment`, after the standard 80%+ validator supermajority held for two weeks.
+  - **Permissioned Domains (XLS-80)** — activated **2026-02-04** (confirmed by RippleX directly).
+  - **Permissioned DEX** — activated **2026-02-18**.
+  - Both primitives this plan depends on are live today, so the identity/KYC and access-gating work is **buildable now** — not blocked on protocol changes.
+  - *Verification caveat:* confirmed via multiple independent sources including RippleX's own announcements; ledger-level confirmation was not possible from the Cowork sandbox (XRPL endpoints are outside its network allowlist). To re-confirm firsthand, check `livenet.xrpl.org/network/amendments` or run the `feature` command against a mainnet node.
+- ⚠️ **Still to verify before the mainnet flip: `MPTokensV1` amendment status.** §1 describes liens as MPTs (Multi-Purpose Tokens) while `App.jsx` marketing copy says `NFTokenMint` — reconcile which primitive is actually minted, then confirm that amendment is enabled on mainnet. This is on the critical path to `VITE_NETWORK=mainnet` and is currently unverified.
