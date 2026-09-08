@@ -4,7 +4,7 @@ This file is the orientation doc for any future Cowork or Claude Code session wo
 
 ## 1. Project Overview
 
-**LienChain** is a platform that tokenizes personal-injury (PI) medical liens on the XRP Ledger (XRPL). PI clinics treat patients on a lien — they're paid out of the eventual settlement, sometimes 12–24 months later. That receivable is illiquid, hard to value, and impossible to trade. LienChain mints each lien as an MPT (Multi-Purpose Token) on XRPL with metadata embedded in the transaction memo (bill amount, purchase price, discount rate, clinic ID, maturity), then automates settlement waterfalls so the clinic and the funder/buyer (LienCo) get paid in the agreed split when the case settles.
+**LienChain** is a platform that tokenizes personal-injury (PI) medical liens on the XRP Ledger (XRPL). PI clinics treat patients on a lien — they're paid out of the eventual settlement, sometimes 12–24 months later. That receivable is illiquid, hard to value, and impossible to trade. LienChain mints each lien as an **XRPL NFToken (XLS-20)** via an `NFTokenMint` transaction — taxon `1337`, `tfTransferable`, URI = the lien ID — with metadata embedded in the transaction memo (bill amount, purchase price, discount rate, clinic ID, maturity), then automates settlement waterfalls so the clinic and the funder/buyer (LienCo) get paid in the agreed split when the case settles.
 
 **The user is Matt** — non-technical founder, 4+ years scaling PI clinics in Kansas City and St. Louis. He understands the receivables side of the business cold (clinics, attorneys, statutes, settlement mechanics). He does **not** write code. He works with Claude (the chat) to plan, hands the plan to Claude Code to execute, and leans on Cowork for infrastructure, files, and ops tasks. Explanations should be plain-language; jargon should be defined the first time it appears.
 
@@ -32,7 +32,7 @@ lienchain/
 │
 ├── setup-wallets.js            Generates + funds LienCo and Clinic wallets
 ├── setup-markets.js            Funds the 6-wallet panel (LienCo + KC/STL/TX/NV/IN)
-├── issue-lien.js               Mints a PILIEN MPT with hex-encoded JSON memo
+├── issue-lien.js               LEGACY/dev only: TrustSet + Payment (IOU), NOT what the app mints
 ├── settle-lien.js              Two-tx settlement: Attorney → LienCo → Clinic
 ├── settle-real.js              Multi-market settlement variant (takes market code arg)
 │
@@ -41,7 +41,7 @@ lienchain/
     ├── App.jsx                 Landing page (hero, problem/solution, features)
     ├── Dashboard.jsx           Multi-market dashboard, 6-wallet panel, ledger
     ├── lib/
-    │   ├── xrpl-tokenize.js    Client-side MPT issuance via WebSocket
+    │   ├── xrpl-tokenize.js    Client-side NFTokenMint issuance via WebSocket
     │   └── xrpl-data.js        Account/tx queries, memo decode, balance fetch
     ├── components/
     │   ├── IntakeWizard.jsx    4-step lien intake (Clinic → Case → Split → Tokenize)
@@ -126,4 +126,9 @@ When any of these close, update this section.
   - **Permissioned DEX** — activated **2026-02-18**.
   - Both primitives this plan depends on are live today, so the identity/KYC and access-gating work is **buildable now** — not blocked on protocol changes.
   - *Verification caveat:* confirmed via multiple independent sources including RippleX's own announcements; ledger-level confirmation was not possible from the Cowork sandbox (XRPL endpoints are outside its network allowlist). To re-confirm firsthand, check `livenet.xrpl.org/network/amendments` or run the `feature` command against a mainnet node.
-- ⚠️ **Still to verify before the mainnet flip: `MPTokensV1` amendment status.** §1 describes liens as MPTs (Multi-Purpose Tokens) while `App.jsx` marketing copy says `NFTokenMint` — reconcile which primitive is actually minted, then confirm that amendment is enabled on mainnet. This is on the critical path to `VITE_NETWORK=mainnet` and is currently unverified.
+- ✅ **MPT-vs-NFToken question RESOLVED (2026-09-08) — no amendment blocker.** Read the code directly: the live app mints an **NFToken, not an MPT**. `src/lib/xrpl-tokenize.js` submits `TransactionType: "NFTokenMint"` (taxon `1337`, `Flags: 8` = `tfTransferable`, URI = hex lien ID, LienChain-Metadata memo). `MPTokenIssuanceCreate` appears **nowhere** in the repo — nothing has ever minted an MPT. The governing amendment is therefore **`NonFungibleTokensV1_1` (XLS-20), enabled on mainnet 2022-10-31** — live for ~4 years and universally supported. **`MPTokensV1` is irrelevant to this build.** The old §1/§3 "MPT" wording was simply wrong and has been corrected; `App.jsx`'s "NFTokenMint" copy was the accurate one all along.
+
+**Follow-ups from that finding (not yet done — code changes, need Matt's go-ahead):**
+- **Misleading function name:** the exported function is still called `issueLienMPT()` even though it mints an NFToken. Rename to `issueLienNFT()` (touches `IntakeWizard.jsx` callers) — cosmetic but it's what caused this documentation drift in the first place.
+- **`issue-lien.js` is a third, inconsistent mechanism:** the root CLI script uses `TrustSet` + `Payment` (an IOU / issued-currency approach), which is neither NFToken nor MPT. It's legacy dev tooling and is NOT the production path, but leaving it around invites exactly this confusion. Retire it or clearly mark it legacy.
+- **Assignability vs. `tfTransferable`:** liens are minted freely transferable (`Flags: 8`). For any state that restricts lien assignment (Indiana's non-assignable flag, if IN is ever re-activated), a freely-transferable token is a compliance mismatch. This is the natural place where the **Permissioned Domains (XLS-80)** work above should hook in — gate who may receive a lien token rather than minting it openly transferable.
