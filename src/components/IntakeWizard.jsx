@@ -35,7 +35,7 @@ const CLINIC_DESTINATIONS = {
   "Gateway Injury Clinic": "r3CuAh6S7JnjcsN5z8LyoUDZiBvT8aVBBP",
 };
 
-import { SELECTABLE_MARKETS, MARKET_INFO } from "../lib/markets.js";
+import { SELECTABLE_MARKETS, MARKET_INFO, isAssignableMarket, mintFlagsForMarket } from "../lib/markets.js";
 
 // Wizard market options: only markets open for NEW liens (SELECTABLE_MARKETS excludes
 // retired markets like Indiana), shaped as {value, label} for <select>.
@@ -162,6 +162,13 @@ export default function IntakeWizard({ onClose, onComplete, cases = [] }) {
       treatmentYear:  effectiveTreatYear,
       tx1:               hash,
       tx2:               null,
+      // Phase 13: record the assignability decision AS MINTED. Never re-derive
+      // this from the market at read time — a market's policy can change later,
+      // but the token's flags are immutable, so the recorded value is the truth.
+      // Liens minted before Phase 13 have neither field; render those as
+      // "transferable (legacy mint)" rather than guessing.
+      assignable:        isAssignableMarket(market),
+      mintFlags:         mintFlagsForMarket(market),
       flags,
       status,
       destinationAddress: CLINIC_DESTINATIONS[clinicName] ?? null,

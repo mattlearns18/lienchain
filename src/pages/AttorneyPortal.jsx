@@ -497,8 +497,26 @@ export default function AttorneyPortal() {
   const caseRecord = findCaseByCaseId(caseId);
   let sessionStore = [];
   try { sessionStore = JSON.parse(localStorage.getItem("lienchain:attorneySessions") || "[]"); } catch (_) {}
-  const hasValidSession = sessionStore.some(s => s.caseId === caseId);
   const assignment = caseRecord?.attorneyAssignment ?? null;
+
+  // A stored session is only valid if its token still matches the case's CURRENT
+  // assignment token. Matching on caseId alone (the previous behaviour) meant
+  // Reassign / Resend rotated the token but the removed attorney's browser kept
+  // working — revocation that did not revoke.
+  const hasValidSession =
+    !!assignment &&
+    sessionStore.some(s => s.caseId === caseId && s.token === assignment.token);
+
+  // Drop superseded sessions for this case so a revoked browser does not hold a
+  // stale record indefinitely. Only writes when there is actually something to
+  // remove, to avoid a pointless localStorage write on every render.
+  if (!hasValidSession) {
+    const pruned = sessionStore.filter(s => s.caseId !== caseId);
+    if (pruned.length !== sessionStore.length) {
+      sessionStore = pruned;
+      try { localStorage.setItem("lienchain:attorneySessions", JSON.stringify(pruned)); } catch (_) {}
+    }
+  }
 
   let gateOpen = hasValidSession;
   if (!gateOpen && urlToken && assignment && urlToken === assignment.token) {

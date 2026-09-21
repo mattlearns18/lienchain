@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/lib/__tests__/waterfall.test.js",
+    "test": "node src/lib/__tests__/waterfall.test.js && node src/lib/__tests__/markets.test.js",
     "backtest": "node backtest.mjs",
     "check": "node check.mjs"
   },

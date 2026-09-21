@@ -163,11 +163,18 @@ const AUDIT_RULES = [
       if (!settle || !money) return;
 
       const usesTestnetScaling = /dollarsToTestnetDrops/.test(settle);
-      // A real guard = the code refuses to run (throws) when network is mainnet.
+
+      // A real guard = an `if` that TESTS the mainnet flag and refuses to proceed.
+      //
+      // Anchor on the conditional, not the bare identifier. An earlier version of
+      // this rule matched `isMainnet` anywhere followed by any `success: false`
+      // within 600 chars — and this file's unrelated no-destination sentinel
+      // satisfied that, so a completely unguarded file scored as guarded. A
+      // negative-control run (guard deleted, rule expected to fire) caught it.
+      // Accept either refusal style: throw, or the { success: false } sentinel
+      // pattern this file already uses elsewhere.
       const hasMainnetGuard =
-        /isMainnet[\s\S]{0,400}?throw/.test(settle) ||
-        /throw[\s\S]{0,200}?isMainnet/.test(settle) ||
-        /if\s*\(\s*.*mainnet.*\)\s*[\s\S]{0,120}?throw/i.test(settle);
+        /if\s*\([^)]*\bisMainnet\b[^)]*\)\s*\{[\s\S]{0,600}?(throw|success:\s*false)/.test(settle);
 
       if (usesTestnetScaling && !hasMainnetGuard) {
         finding("BLOCKER", this.id,
@@ -485,11 +492,9 @@ const isPlatformBinaryError = (out) =>
 
 const build = runGate("build          ", "npm run build --silent", { skipIf: isPlatformBinaryError });
 
-const TEST_PATH = "src/lib/__tests__/waterfall.test.js";
-const tests = existsSync(join(ROOT, TEST_PATH))
-  ? runGate("waterfall tests", `node ${TEST_PATH}`)
-  : (console.log(`  ${c.yellow}SKIP${c.reset} waterfall tests ${c.dim}(file not found)${c.reset}`),
-     gates.push({ name: "waterfall tests", status: "SKIP", output: "not found" }), { ok: null });
+// Delegates to `npm test` rather than naming test files here, so adding a test
+// means editing package.json only — this gate picks it up automatically.
+const tests = runGate("unit tests     ", "npm test --silent");
 
 const backtest = existsSync(join(ROOT, "backtest.mjs"))
   ? runGate("backtest       ", "node backtest.mjs", { skipIf: isPlatformBinaryError })

@@ -14,6 +14,25 @@ import { Client, Wallet } from "xrpl";
 import { getNetworkConfig } from "./network.js";
 import { dollarsToTestnetDrops } from "./money.js";
 
+/**
+ * MAINNET SAFETY INTERLOCK
+ * ════════════════════════
+ * dollarsToTestnetDrops() divides every amount by 1,000 so payments fit inside
+ * faucet-funded testnet wallets. On mainnet that same call would send 1/1000th
+ * of the intended value as REAL money — a $5,000 clinic payout leaving as 5 XRP
+ * — and XRPL settlement is final. There is no reversal.
+ *
+ * This flag fails the whole settlement path closed whenever the network is
+ * mainnet and the real currency path is not yet implemented. Flip it to `true`
+ * ONLY in the same commit that replaces dollarsToTestnetDrops() with a proper
+ * issued-currency Amount object (RLUSD per MAINNET-READINESS.md).
+ *
+ * The guard lives here, not in money.js, on purpose: money.js is deliberately
+ * pure with no network import so the backtest can exercise the real conversion
+ * bytes in isolation. Adding a network dependency there would break that.
+ */
+const MAINNET_CURRENCY_IMPLEMENTED = false;
+
 // Fallback destination addresses for seed/historical clinic names (testnet only).
 // These map the short names used in the hardcoded SETTLEMENTS array in Dashboard.jsx.
 // TODO(phase10): replace with a proper clinic-registry UI and per-clinic onboarding flow.
@@ -58,7 +77,21 @@ export async function executeSettlementPayment({ caseId, lienId, clinic, amount 
     return { success: true, skipped: true, txHash: null, ledgerIndex: null };
   }
 
-  const { wssUrl, seed } = getNetworkConfig();
+  const { wssUrl, seed, isMainnet } = getNetworkConfig();
+
+  // Fail closed on mainnet until the real currency path exists. See the
+  // MAINNET_CURRENCY_IMPLEMENTED note at the top of this file — without this,
+  // flipping VITE_NETWORK=mainnet would silently send 1/1000th of every payout
+  // as real, unrecoverable XRP.
+  if (isMainnet && !MAINNET_CURRENCY_IMPLEMENTED) {
+    const msg =
+      "mainnet-blocked: refusing to settle on mainnet while payouts still use testnet " +
+      "1000:1 scaling. This would send 1/1000th of the intended amount as real money, " +
+      "irreversibly. Implement the RLUSD issued-currency Amount path and set " +
+      "MAINNET_CURRENCY_IMPLEMENTED = true in src/lib/settle-onchain.js before going live.";
+    console.error(`[LienChain] ${msg}`);
+    return { success: false, error: msg };
+  }
 
   const destination = resolveDestination(clinic);
   if (!destination) {

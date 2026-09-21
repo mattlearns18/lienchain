@@ -11,6 +11,7 @@
 
 import { Client, Wallet } from "xrpl";
 import { getNetworkConfig } from "./network.js";
+import { mintFlagsForMarket, isAssignableMarket } from "./markets.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,11 +85,23 @@ export async function issueLienMPT(lienData) {
     const uriHex      = Buffer.from(lienData.id).toString("hex").toUpperCase();
 
     // 3. Build NFTokenMint transaction
+    //
+    // Phase 13: Flags are driven by the market's assignability policy, never
+    // hardcoded. Mint flags are IMMUTABLE — this single value permanently fixes
+    // whether the lien can ever be assigned to a third party, and tfBurnable is
+    // not set, so it cannot be corrected by burning and re-minting.
+    const mintFlags = mintFlagsForMarket(lienData.market);
+    console.log(
+      `[XRPL] Market ${lienData.market}: ` +
+      `${isAssignableMarket(lienData.market) ? "assignable" : "NON-ASSIGNABLE"} ` +
+      `→ Flags: ${mintFlags} (permanent)`
+    );
+
     const tx = {
       TransactionType:  "NFTokenMint",
       Account:          wallet.classicAddress,
       NFTokenTaxon:     1337,   // LienChain lien taxon
-      Flags:            8,      // tfTransferable
+      Flags:            mintFlags,
       URI:              uriHex,
       Memos: [{
         Memo: {
