@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node src/lib/__tests__/waterfall.test.js",
+    "backtest": "node backtest.mjs",
+    "check": "node check.mjs"
   },
   "keywords": [],
   "author": "",
